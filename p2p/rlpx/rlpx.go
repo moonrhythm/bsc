@@ -28,6 +28,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/oxtoacart/bpool"
 	"hash"
 	"io"
 	mrand "math/rand"
@@ -239,15 +240,19 @@ func putInt24(v uint32, b []byte) {
 	b[2] = byte(v)
 }
 
+var bytepool = bpool.NewBytePool(4, 16)
+
 // updateMAC reseeds the given hash with encrypted seed.
 // it returns the first 16 bytes of the hash sum after seeding.
 func updateMAC(mac hash.Hash, block cipher.Block, seed []byte) []byte {
-	aesbuf := make([]byte, aes.BlockSize)
+	//aesbuf := make([]byte, aes.BlockSize)
+	aesbuf := bytepool.Get()
 	block.Encrypt(aesbuf, mac.Sum(nil))
 	for i := range aesbuf {
 		aesbuf[i] ^= seed[i]
 	}
 	mac.Write(aesbuf)
+	bytepool.Put(aesbuf)
 	return mac.Sum(nil)[:16]
 }
 
