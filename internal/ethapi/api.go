@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/davecgh/go-spew/spew"
@@ -896,10 +898,10 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 	}
 	// Wait for the context to be done and cancel the evm. Even if the
 	// EVM has finished, cancelling may be done (repeatedly)
-	go func() {
+	gopool.Submit(func() {
 		<-ctx.Done()
 		evm.Cancel()
-	}()
+	})
 
 	// Execute the message.
 	gp := new(core.GasPool).AddGas(math.MaxUint64)

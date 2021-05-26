@@ -33,6 +33,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/edsrzf/mmap-go"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/log"
@@ -590,14 +592,14 @@ func (ethash *Ethash) dataset(block uint64, async bool) *dataset {
 
 	// If async is specified, generate everything in a background thread
 	if async && !current.generated() {
-		go func() {
+		gopool.Submit(func() {
 			current.generate(ethash.config.DatasetDir, ethash.config.DatasetsOnDisk, ethash.config.DatasetsLockMmap, ethash.config.PowMode == ModeTest)
 
 			if futureI != nil {
 				future := futureI.(*dataset)
 				future.generate(ethash.config.DatasetDir, ethash.config.DatasetsOnDisk, ethash.config.DatasetsLockMmap, ethash.config.PowMode == ModeTest)
 			}
-		}()
+		})
 	} else {
 		// Either blocking generation was requested, or already done
 		current.generate(ethash.config.DatasetDir, ethash.config.DatasetsOnDisk, ethash.config.DatasetsLockMmap, ethash.config.PowMode == ModeTest)

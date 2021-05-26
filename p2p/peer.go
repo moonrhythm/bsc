@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
@@ -228,8 +230,12 @@ func (p *Peer) run() (remoteRequested bool, err error) {
 		reason     DiscReason // sent to the peer
 	)
 	p.wg.Add(2)
-	go p.readLoop(readErr)
-	go p.pingLoop()
+	gopool.Submit(func() {
+		p.readLoop(readErr)
+	})
+	gopool.Submit(func() {
+		p.pingLoop()
+	})
 
 	// Start all protocol handlers.
 	writeStart <- struct{}{}
@@ -308,7 +314,9 @@ func (p *Peer) handle(msg Msg) error {
 	switch {
 	case msg.Code == pingMsg:
 		msg.Discard()
-		go SendItems(p.rw, pongMsg)
+		gopool.Submit(func() {
+			SendItems(p.rw, pongMsg)
+		})
 	case msg.Code == discMsg:
 		var reason [1]DiscReason
 		// This is the last message. We don't need to discard or
@@ -388,7 +396,7 @@ func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error)
 			rw = newMsgEventer(rw, p.events, p.ID(), proto.Name, p.Info().Network.RemoteAddress, p.Info().Network.LocalAddress)
 		}
 		p.log.Trace(fmt.Sprintf("Starting protocol %s/%d", proto.Name, proto.Version))
-		go func() {
+		gopool.Submit(func() {
 			defer p.wg.Done()
 			err := proto.Run(p, rw)
 			if err == nil {
@@ -398,7 +406,7 @@ func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error)
 				p.log.Trace(fmt.Sprintf("Protocol %s/%d failed", proto.Name, proto.Version), "err", err)
 			}
 			p.protoErr <- err
-		}()
+		})
 	}
 }
 

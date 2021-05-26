@@ -28,6 +28,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/event"
@@ -150,8 +152,10 @@ func (p *peerConnection) FetchHeaders(from uint64, count int) error {
 	p.headerStarted = time.Now()
 
 	// Issue the header retrieval request (absolute upwards without gaps)
-	go p.peer.RequestHeadersByNumber(from, count, 0, false)
-
+	gopool.Submit(
+		func() {
+			p.peer.RequestHeadersByNumber(from, count, 0, false)
+		})
 	return nil
 }
 
@@ -163,14 +167,14 @@ func (p *peerConnection) FetchBodies(request *fetchRequest) error {
 	}
 	p.blockStarted = time.Now()
 
-	go func() {
+	gopool.Submit(func() {
 		// Convert the header set to a retrievable slice
 		hashes := make([]common.Hash, 0, len(request.Headers))
 		for _, header := range request.Headers {
 			hashes = append(hashes, header.Hash())
 		}
 		p.peer.RequestBodies(hashes)
-	}()
+	})
 
 	return nil
 }
@@ -183,14 +187,14 @@ func (p *peerConnection) FetchReceipts(request *fetchRequest) error {
 	}
 	p.receiptStarted = time.Now()
 
-	go func() {
+	gopool.Submit(func() {
 		// Convert the header set to a retrievable slice
 		hashes := make([]common.Hash, 0, len(request.Headers))
 		for _, header := range request.Headers {
 			hashes = append(hashes, header.Hash())
 		}
 		p.peer.RequestReceipts(hashes)
-	}()
+	})
 
 	return nil
 }
@@ -203,7 +207,9 @@ func (p *peerConnection) FetchNodeData(hashes []common.Hash) error {
 	}
 	p.stateStarted = time.Now()
 
-	go p.peer.RequestNodeData(hashes)
+	gopool.Submit(func() {
+		p.peer.RequestNodeData(hashes)
+	})
 
 	return nil
 }

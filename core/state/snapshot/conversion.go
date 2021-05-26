@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -251,17 +253,17 @@ func generateTrieRoot(db ethdb.KeyValueWriter, it Iterator, account common.Hash,
 	)
 	// Spin up a go-routine for trie hash re-generation
 	wg.Add(1)
-	go func() {
+	gopool.Submit(func() {
 		defer wg.Done()
 		generatorFn(db, in, out)
-	}()
+	})
 	// Spin up a go-routine for progress logging
 	if report && stats != nil {
 		wg.Add(1)
-		go func() {
+		gopool.Submit(func() {
 			defer wg.Done()
 			runReport(stats, stoplog)
-		}()
+		})
 	}
 	// Create a semaphore to assign tasks and collect results through. We'll pre-
 	// fill it with nils, thus using the same channel for both limiting concurrent
@@ -315,7 +317,8 @@ func generateTrieRoot(db ethdb.KeyValueWriter, it Iterator, account common.Hash,
 				if err != nil {
 					return stop(err)
 				}
-				go func(hash common.Hash) {
+				hash := it.Hash()
+				gopool.Submit(func() {
 					subroot, err := leafCallback(db, hash, common.BytesToHash(account.CodeHash), stats)
 					if err != nil {
 						results <- err
@@ -326,7 +329,7 @@ func generateTrieRoot(db ethdb.KeyValueWriter, it Iterator, account common.Hash,
 						return
 					}
 					results <- nil
-				}(it.Hash())
+				})
 				fullData, err = rlp.EncodeToBytes(account)
 				if err != nil {
 					return stop(err)

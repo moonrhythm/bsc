@@ -19,6 +19,8 @@ package state
 import (
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -225,7 +227,9 @@ func newSubfetcher(db Database, root common.Hash) *subfetcher {
 		copy: make(chan chan Trie),
 		seen: make(map[string]struct{}),
 	}
-	go sf.loop()
+	gopool.Submit(func() {
+		sf.loop()
+	})
 	return sf
 }
 

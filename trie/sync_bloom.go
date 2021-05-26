@@ -23,6 +23,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -67,14 +69,15 @@ func NewSyncBloom(memory uint64, database ethdb.Iteratee) *SyncBloom {
 		bloom: bloom,
 	}
 	b.pend.Add(2)
-	go func() {
+	gopool.Submit(func() {
 		defer b.pend.Done()
 		b.init(database)
-	}()
-	go func() {
+	})
+
+	gopool.Submit(func() {
 		defer b.pend.Done()
 		b.meter()
-	}()
+	})
 	return b
 }
 

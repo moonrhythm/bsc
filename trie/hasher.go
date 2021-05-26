@@ -19,6 +19,8 @@ package trie
 import (
 	"sync"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
+
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 	"golang.org/x/crypto/sha3"
@@ -124,16 +126,17 @@ func (h *hasher) hashFullNodeChildren(n *fullNode) (collapsed *fullNode, cached 
 		var wg sync.WaitGroup
 		wg.Add(16)
 		for i := 0; i < 16; i++ {
-			go func(i int) {
+			tmpi := i
+			gopool.Submit(func() {
 				hasher := newHasher(false)
-				if child := n.Children[i]; child != nil {
-					collapsed.Children[i], cached.Children[i] = hasher.hash(child, false)
+				if child := n.Children[tmpi]; child != nil {
+					collapsed.Children[tmpi], cached.Children[tmpi] = hasher.hash(child, false)
 				} else {
-					collapsed.Children[i] = nilValueNode
+					collapsed.Children[tmpi] = nilValueNode
 				}
 				returnHasherToPool(hasher)
 				wg.Done()
-			}(i)
+			})
 		}
 		wg.Wait()
 	} else {
