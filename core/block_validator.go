@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ethereum/go-ethereum/common/gopool"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -87,20 +88,42 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	}
 	// Validate the received block's bloom with the one derived from the generated receipts.
 	// For valid blocks this should always validate to true.
-	rbloom := types.CreateBloom(receipts)
-	if rbloom != header.Bloom {
-		return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
+	validateFuns := []func() error{
+		func() error {
+			rbloom := types.CreateBloom(receipts)
+			if rbloom != header.Bloom {
+				return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
+			}
+			return nil
+		},
+		func() error {
+			receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
+			if receiptSha != header.ReceiptHash {
+				return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
+			} else {
+				return nil
+			}
+		},
+		func() error {
+			if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+				statedb.IterativeDump(true, true, true, json.NewEncoder(os.Stdout))
+				return fmt.Errorf("invalid merkle root (remote: %x local: %x)", header.Root, root)
+			} else {
+				return nil
+			}
+		},
 	}
-	// Tre receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
-	receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
-	if receiptSha != header.ReceiptHash {
-		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
+	validateRes := make(chan error, len(validateFuns))
+	for _, f := range validateFuns {
+		gopool.Submit(func() {
+			validateRes <- f()
+		})
 	}
-	// Validate the state root against the received state root and throw
-	// an error if they don't match.
-	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
-		statedb.IterativeDump(true, true, true, json.NewEncoder(os.Stdout))
-		return fmt.Errorf("invalid merkle root (remote: %x local: %x)", header.Root, root)
+	for i := 0; i < len(validateFuns); i++ {
+		r := <-validateRes
+		if r != nil {
+			return r
+		}
 	}
 	return nil
 }
