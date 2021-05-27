@@ -115,8 +115,9 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	}
 	validateRes := make(chan error, len(validateFuns))
 	for _, f := range validateFuns {
+		tmpFunc := f
 		gopool.Submit(func() {
-			validateRes <- f()
+			validateRes <- tmpFunc()
 		})
 	}
 	for i := 0; i < len(validateFuns); i++ {
