@@ -23,10 +23,13 @@ import (
 	"io"
 	"math/big"
 	mrand "math/rand"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common/gopool"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"
@@ -1681,7 +1684,8 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		return 0, nil
 	}
 	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
-	go senderCacher.recoverFromBlocks(types.MakeSigner(bc.chainConfig, chain[0].Number()), chain)
+	signer := types.MakeSigner(bc.chainConfig, chain[0].Number())
+	go senderCacher.recoverFromBlocks(signer, chain)
 
 	var (
 		stats     = insertStats{startTime: mclock.Now()}
@@ -1871,6 +1875,36 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 				}(time.Now(), followup, throwaway, &followupInterrupt)
 			}
 		}
+		preloadWg := sync.WaitGroup{}
+		accounts := make(map[common.Address]bool, len(block.Transactions()))
+		for _, tx := range block.Transactions() {
+			from, err := types.Sender(signer, tx)
+			if err != nil {
+				break
+			}
+			accounts[from] = true
+			if tx.To() != nil {
+				accounts[*tx.To()] = true
+			}
+			accountsSlice := make([]common.Address, 0, len(accounts))
+			for account, _ := range accounts {
+				accountsSlice = append(accountsSlice, account)
+			}
+			for i := 0; i < runtime.NumCPU(); i++ {
+				start := i * len(accountsSlice) / runtime.NumCPU()
+				end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
+				if i+1 == runtime.NumCPU() {
+					end = len(accounts)
+				}
+				preloadWg.Add(1)
+				gopool.Submit(func() {
+					defer preloadWg.Done()
+					statedb.PreloadStateObject(accountsSlice[start:end])
+				})
+			}
+		}
+		preloadWg.Wait()
+
 		// Process block using the parent state as reference point
 		substart := time.Now()
 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)

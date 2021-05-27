@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -75,6 +76,7 @@ type StateDB struct {
 	snapStorage   map[common.Hash]map[common.Hash][]byte
 
 	// This map holds 'live' objects, which will get modified while processing a state transition.
+	stateObjMux         sync.RWMutex
 	stateObjects        map[common.Address]*stateObject
 	stateObjectsPending map[common.Address]struct{} // State objects finalized but not yet written to the trie
 	stateObjectsDirty   map[common.Address]struct{} // State objects modified in the current execution
@@ -507,6 +509,47 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 		return obj
 	}
 	return nil
+}
+
+func (s *StateDB) PreloadStateObject(address []common.Address) {
+	// Prefer live objects if any is available
+	if s.snap == nil {
+		return
+	}
+	hasher := crypto.NewKeccakState()
+	for _, addr := range address {
+		s.stateObjMux.RLock()
+		obj := s.stateObjects[addr]
+		s.stateObjMux.RUnlock()
+		if obj != nil {
+			continue
+		}
+		// If no live objects are available, attempt to use snapshots
+		if acc, err := s.snap.Account(crypto.HashData(hasher, addr.Bytes())); err == nil {
+			if acc == nil {
+				continue
+			}
+			data := &Account{
+				Nonce:    acc.Nonce,
+				Balance:  acc.Balance,
+				CodeHash: acc.CodeHash,
+				Root:     common.BytesToHash(acc.Root),
+			}
+			if len(data.CodeHash) == 0 {
+				data.CodeHash = emptyCodeHash
+			}
+			if data.Root == (common.Hash{}) {
+				data.Root = emptyRoot
+			}
+			// Insert into the live set
+			obj = newObject(s, addr, *data)
+			s.stateObjMux.Lock()
+			s.setStateObject(obj)
+			s.stateObjMux.Unlock()
+		}
+		// Do not enable this feature when snapshot is not enabled.
+	}
+	return
 }
 
 // getDeletedStateObject is similar to getStateObject, but instead of returning
