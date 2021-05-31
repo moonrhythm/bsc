@@ -1877,6 +1877,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		}
 		preloadWg := sync.WaitGroup{}
 		accounts := make(map[common.Address]bool, len(block.Transactions()))
+		accountsSlice := make([]common.Address, 0, len(accounts))
 		for _, tx := range block.Transactions() {
 			from, err := types.Sender(signer, tx)
 			if err != nil {
@@ -1886,22 +1887,21 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 			if tx.To() != nil {
 				accounts[*tx.To()] = true
 			}
-			accountsSlice := make([]common.Address, 0, len(accounts))
 			for account, _ := range accounts {
 				accountsSlice = append(accountsSlice, account)
 			}
-			for i := 0; i < runtime.NumCPU(); i++ {
-				start := i * len(accountsSlice) / runtime.NumCPU()
-				end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
-				if i+1 == runtime.NumCPU() {
-					end = len(accounts)
-				}
-				preloadWg.Add(1)
-				gopool.Submit(func() {
-					defer preloadWg.Done()
-					statedb.PreloadStateObject(accountsSlice[start:end])
-				})
+		}
+		for i := 0; i < runtime.NumCPU(); i++ {
+			start := i * len(accountsSlice) / runtime.NumCPU()
+			end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
+			if i+1 == runtime.NumCPU() {
+				end = len(accounts)
 			}
+			preloadWg.Add(1)
+			gopool.Submit(func() {
+				defer preloadWg.Done()
+				statedb.PreloadStateObject(accountsSlice[start:end])
+			})
 		}
 		preloadWg.Wait()
 
