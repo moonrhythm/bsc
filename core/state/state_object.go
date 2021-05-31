@@ -335,7 +335,11 @@ func (s *stateObject) updateTrie(db Database) Trie {
 	}
 	// Track the amount of time wasted on updating the storage trie
 	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageUpdates += time.Since(start) }(time.Now())
+		defer func(start time.Time) {
+			s.db.MetricsMux.Lock()
+			s.db.StorageUpdates += time.Since(start)
+			s.db.MetricsMux.Unlock()
+		}(time.Now())
 	}
 	// The snapshot storage map for the object
 	var storage map[common.Hash][]byte
@@ -361,6 +365,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 		}
 		// If state snapshotting is active, cache the data til commit
 		if s.db.snap != nil {
+			s.db.snapMux.Lock()
 			if storage == nil {
 				// Retrieve the old storage map, if available, create a new one otherwise
 				if storage = s.db.snapStorage[s.addrHash]; storage == nil {
@@ -369,6 +374,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 				}
 			}
 			storage[crypto.HashData(hasher, key[:])] = v // v will be nil if value is 0x00
+			s.db.snapMux.Unlock()
 		}
 		usedStorage = append(usedStorage, common.CopyBytes(key[:])) // Copy needed for closure
 	}
@@ -389,7 +395,11 @@ func (s *stateObject) updateRoot(db Database) {
 	}
 	// Track the amount of time wasted on hashing the storage trie
 	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageHashes += time.Since(start) }(time.Now())
+		defer func(start time.Time) {
+			s.db.MetricsMux.Lock()
+			s.db.StorageHashes += time.Since(start)
+			s.db.MetricsMux.Unlock()
+		}(time.Now())
 	}
 	s.data.Root = s.trie.Hash()
 }

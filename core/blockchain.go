@@ -1895,7 +1895,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 			start := i * len(accountsSlice) / runtime.NumCPU()
 			end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
 			if i+1 == runtime.NumCPU() {
-				end = len(accounts)
+				end = len(accountsSlice)
 			}
 			preloadWg.Add(1)
 			gopool.Submit(func() {
