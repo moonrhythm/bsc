@@ -26,8 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/gopool"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -475,21 +473,16 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 	}
 	// Encode the account and update the account trie
 	addr := obj.Address()
-
-	data, err := rlp.EncodeToBytes(obj)
-	if err != nil {
-		panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
+	data := obj.encodeData
+	var err error
+	if data == nil {
+		data, err = rlp.EncodeToBytes(obj)
+		if err != nil {
+			panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
+		}
 	}
 	if err = s.trie.TryUpdate(addr[:], data); err != nil {
 		s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
-	}
-
-	// If state snapshotting is active, cache the data til commit. Note, this
-	// update mechanism is not symmetric to the deletion, because whereas it is
-	// enough to track account updates at commit time, deletions need tracking
-	// at transaction boundary level to ensure we capture state clearing.
-	if s.snap != nil {
-		s.snapAccounts[obj.addrHash] = snapshot.SlimAccountRLP(obj.data.Nonce, obj.data.Balance, obj.data.Root, obj.data.CodeHash)
 	}
 }
 
@@ -903,9 +896,10 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 
 	tasks := make(chan func())
 	finishCh := make(chan struct{})
+	defer close(finishCh)
 	wg := sync.WaitGroup{}
 	for i := 0; i < runtime.NumCPU(); i++ {
-		gopool.Submit(func() {
+		go func() {
 			for {
 				select {
 				case task := <-tasks:
@@ -914,7 +908,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 					return
 				}
 			}
-		})
+		}()
 	}
 	// Although naively it makes sense to retrieve the account trie and then do
 	// the contract storage and account updates sequentially, that short circuits
@@ -926,12 +920,26 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 			wg.Add(1)
 			tasks <- func() {
 				obj.updateRoot(s.db)
+
+				// If state snapshotting is active, cache the data til commit. Note, this
+				// update mechanism is not symmetric to the deletion, because whereas it is
+				// enough to track account updates at commit time, deletions need tracking
+				// at transaction boundary level to ensure we capture state clearing.
+				if s.snap != nil && !obj.deleted {
+					s.snapMux.Lock()
+					s.snapAccounts[obj.addrHash] = snapshot.SlimAccountRLP(obj.data.Nonce, obj.data.Balance, obj.data.Root, obj.data.CodeHash)
+					s.snapMux.Unlock()
+				}
+				data, err := rlp.EncodeToBytes(obj)
+				if err != nil {
+					panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
+				}
+				obj.encodeData = data
 				wg.Done()
 			}
 		}
 	}
 	wg.Wait()
-	close(finishCh)
 	// Now we're about to start to write changes to the trie. The trie is so far
 	// _untouched_. We can check with the prefetcher, if it can give us a trie
 	// which has the same root, but also has some content loaded into it.
@@ -991,19 +999,49 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 		func() error {
 			// Commit objects to the trie, measuring the elapsed time
 			codeWriter := s.db.TrieDB().DiskDB().NewBatch()
+			tasks := make(chan func())
+			taskResults := make(chan error, len(s.stateObjectsDirty))
+			tasksNum := 0
+			finishCh := make(chan struct{})
+			defer close(finishCh)
+			for i := 0; i < runtime.NumCPU(); i++ {
+				go func() {
+					for {
+						select {
+						case task := <-tasks:
+							task()
+						case <-finishCh:
+							return
+						}
+					}
+				}()
+			}
+
 			for addr := range s.stateObjectsDirty {
 				if obj := s.stateObjects[addr]; !obj.deleted {
 					// Write any contract code associated with the state object
-					if obj.code != nil && obj.dirtyCode {
-						rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
-						obj.dirtyCode = false
+					tasks <- func() {
+						if obj.code != nil && obj.dirtyCode {
+							rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
+							obj.dirtyCode = false
+						}
+						// Write any storage changes in the state object to its storage trie
+						if err := obj.CommitTrie(s.db); err != nil {
+							taskResults <- err
+						}
+						taskResults <- nil
 					}
-					// Write any storage changes in the state object to its storage trie
-					if err := obj.CommitTrie(s.db); err != nil {
-						return err
-					}
+					tasksNum++
 				}
 			}
+
+			for i := 0; i < tasksNum; i++ {
+				err := <-taskResults
+				if err != nil {
+					return err
+				}
+			}
+
 			if len(s.stateObjectsDirty) > 0 {
 				s.stateObjectsDirty = make(map[common.Address]struct{}, len(s.stateObjectsDirty)/2)
 			}
@@ -1064,9 +1102,9 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 	commitRes := make(chan error, len(commitFuncs))
 	for _, f := range commitFuncs {
 		tmpFunc := f
-		gopool.Submit(func() {
+		go func() {
 			commitRes <- tmpFunc()
-		})
+		}()
 	}
 	for i := 0; i < len(commitFuncs); i++ {
 		r := <-commitRes

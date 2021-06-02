@@ -29,8 +29,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/gopool"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/common/prque"
@@ -1898,10 +1896,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 				end = len(accountsSlice)
 			}
 			preloadWg.Add(1)
-			gopool.Submit(func() {
+			go func() {
 				defer preloadWg.Done()
 				statedb.PreloadStateObject(accountsSlice[start:end])
-			})
+			}()
 		}
 		preloadWg.Wait()
 

@@ -18,6 +18,7 @@ package trie
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -35,9 +36,9 @@ import (
 // SecureTrie is not safe for concurrent use.
 type SecureTrie struct {
 	trie             Trie
-	hashKeyBuf       [common.HashLength]byte
 	secKeyCache      map[string][]byte
 	secKeyCacheOwner *SecureTrie // Pointer to self, replace the key cache on mismatch
+	hashKeyCache     sync.Map
 }
 
 // NewSecure creates a trie with an existing root node from a backing database
@@ -182,12 +183,17 @@ func (t *SecureTrie) NodeIterator(start []byte) NodeIterator {
 // The caller must not hold onto the return value because it will become
 // invalid on the next call to hashKey or secKey.
 func (t *SecureTrie) hashKey(key []byte) []byte {
+	if hash, ok := t.hashKeyCache.Load(string(key)); ok {
+		return hash.([]byte)
+	}
+	hash := make([]byte, common.HashLength)
 	h := newHasher(false)
 	h.sha.Reset()
 	h.sha.Write(key)
-	h.sha.Read(t.hashKeyBuf[:])
+	h.sha.Read(hash)
 	returnHasherToPool(h)
-	return t.hashKeyBuf[:]
+	t.hashKeyCache.Store(string(key), hash)
+	return hash
 }
 
 // getSecKeyCache returns the current secure key cache, creating a new one if

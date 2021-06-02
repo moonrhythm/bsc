@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ethereum/go-ethereum/common/gopool"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -116,9 +115,9 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	validateRes := make(chan error, len(validateFuns))
 	for _, f := range validateFuns {
 		tmpFunc := f
-		gopool.Submit(func() {
+		go func() {
 			validateRes <- tmpFunc()
-		})
+		}()
 	}
 	for i := 0; i < len(validateFuns); i++ {
 		r := <-validateRes
