@@ -65,11 +65,8 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 
 	validateFuns := []func() error{
 		func() error {
-			if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
-				if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
-					return consensus.ErrUnknownAncestor
-				}
-				return consensus.ErrPrunedAncestor
+			if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
+				return consensus.ErrUnknownAncestor
 			}
 			return nil
 		},
