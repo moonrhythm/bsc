@@ -126,13 +126,17 @@ type StateDB struct {
 
 // New creates a new state from a given trie.
 func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) {
-	tr, err := db.OpenTrie(root)
-	if err != nil {
-		return nil, err
-	}
+	return newStateDB(root, db, snaps, false)
+}
+
+// New creates a new state, but do not open the trie tree at first.
+func LazyNew(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) {
+	return newStateDB(root, db, snaps, true)
+}
+
+func newStateDB(root common.Hash, db Database, snaps *snapshot.Tree, lazy bool) (*StateDB, error) {
 	sdb := &StateDB{
 		db:                  db,
-		trie:                tr,
 		originalRoot:        root,
 		snaps:               snaps,
 		stateObjects:        make(map[common.Address]*stateObject),
@@ -150,6 +154,14 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 			sdb.snapAccounts = make(map[common.Hash][]byte)
 			sdb.snapStorage = make(map[common.Hash]map[common.Hash][]byte)
 		}
+	}
+	// if without snaps, still init with trie tree
+	if !lazy || sdb.snap == nil {
+		tr, err := db.OpenTrie(root)
+		if err != nil {
+			return nil, err
+		}
+		sdb.trie = tr
 	}
 	return sdb, nil
 }
@@ -947,6 +959,13 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		if trie := prefetcher.trie(s.originalRoot); trie != nil {
 			s.trie = trie
 		}
+	}
+	if s.trie == nil {
+		tr, err := s.db.OpenTrie(s.originalRoot)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to open trie tree"))
+		}
+		s.trie = tr
 	}
 	usedAddrs := make([][]byte, 0, len(s.stateObjectsPending))
 	for addr := range s.stateObjectsPending {

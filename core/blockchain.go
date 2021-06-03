@@ -1854,7 +1854,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		if parent == nil {
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
-		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
+		statedb, err := state.LazyNew(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err
 		}
@@ -1867,16 +1867,18 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		var followupInterrupt uint32
 		if !bc.cacheConfig.TrieCleanNoPrefetch {
 			if followup, err := it.peek(); followup != nil && err == nil {
-				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
+				if throwaway, err := state.New(parent.Root, bc.stateCache, bc.snaps); err != nil {
+					log.Error("Can not prefetch state", "err", err)
+				} else {
+					go func(start time.Time, followup *types.Block, throwaway *state.StateDB, interrupt *uint32) {
+						bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)
 
-				go func(start time.Time, followup *types.Block, throwaway *state.StateDB, interrupt *uint32) {
-					bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)
-
-					blockPrefetchExecuteTimer.Update(time.Since(start))
-					if atomic.LoadUint32(interrupt) == 1 {
-						blockPrefetchInterruptMeter.Mark(1)
-					}
-				}(time.Now(), followup, throwaway, &followupInterrupt)
+						blockPrefetchExecuteTimer.Update(time.Since(start))
+						if atomic.LoadUint32(interrupt) == 1 {
+							blockPrefetchInterruptMeter.Mark(1)
+						}
+					}(time.Now(), followup, throwaway, &followupInterrupt)
+				}
 			}
 		}
 		preloadWg := sync.WaitGroup{}
