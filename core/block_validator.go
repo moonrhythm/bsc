@@ -64,14 +64,36 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	if hash := types.CalcUncleHash(block.Uncles()); hash != header.UncleHash {
 		return fmt.Errorf("uncle root hash mismatch: have %x, want %x", hash, header.UncleHash)
 	}
-	if hash := types.DeriveSha(block.Transactions(), trie.NewStackTrie(nil)); hash != header.TxHash {
-		return fmt.Errorf("transaction root hash mismatch: have %x, want %x", hash, header.TxHash)
+
+	validateFuns := []func() error{
+		func() error {
+			if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
+				if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
+					return consensus.ErrUnknownAncestor
+				}
+				return consensus.ErrPrunedAncestor
+			}
+			return nil
+		},
+		func() error {
+			if hash := types.DeriveSha(block.Transactions(), trie.NewStackTrie(nil)); hash != header.TxHash {
+				return fmt.Errorf("transaction root hash mismatch: have %x, want %x", hash, header.TxHash)
+			}
+			return nil
+		},
 	}
-	if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
-		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
-			return consensus.ErrUnknownAncestor
+	validateRes := make(chan error, len(validateFuns))
+	for _, f := range validateFuns {
+		tmpFunc := f
+		go func() {
+			validateRes <- tmpFunc()
+		}()
+	}
+	for i := 0; i < len(validateFuns); i++ {
+		r := <-validateRes
+		if r != nil {
+			return r
 		}
-		return consensus.ErrPrunedAncestor
 	}
 	return nil
 }
