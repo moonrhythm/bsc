@@ -24,8 +24,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/gopool"
-
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -167,9 +165,7 @@ func generateSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, cache i
 		genPending: make(chan struct{}),
 		genAbort:   make(chan chan *generatorStats),
 	}
-	gopool.Submit(func() {
-		base.generate(stats)
-	})
+	go base.generate(stats)
 	log.Debug("Start snapshot generation", "root", root)
 	return base
 }

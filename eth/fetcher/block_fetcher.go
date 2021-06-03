@@ -756,7 +756,7 @@ func (f *BlockFetcher) importHeaders(peer string, header *types.Header) {
 	hash := header.Hash()
 	log.Debug("Importing propagated header", "peer", peer, "number", header.Number, "hash", hash)
 
-	gopool.Submit(func() {
+	go func() {
 		defer func() { f.done <- hash }()
 		// If the parent's unknown, abort insertion
 		parent := f.getHeader(header.ParentHash)
@@ -779,7 +779,7 @@ func (f *BlockFetcher) importHeaders(peer string, header *types.Header) {
 		if f.importedHook != nil {
 			f.importedHook(header, nil)
 		}
-	})
+	}()
 }
 
 // importBlocks spawns a new goroutine to run a block insertion into the chain. If the
@@ -790,7 +790,7 @@ func (f *BlockFetcher) importBlocks(peer string, block *types.Block) {
 
 	// Run the import on a new thread
 	log.Debug("Importing propagated block", "peer", peer, "number", block.Number(), "hash", hash)
-	gopool.Submit(func() {
+	go func() {
 		defer func() { f.done <- hash }()
 
 		// If the parent's unknown, abort insertion
@@ -829,7 +829,7 @@ func (f *BlockFetcher) importBlocks(peer string, block *types.Block) {
 		if f.importedHook != nil {
 			f.importedHook(nil, block)
 		}
-	})
+	}()
 }
 
 // forgetHash removes all traces of a block announcement from the fetcher's

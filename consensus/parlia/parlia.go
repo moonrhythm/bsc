@@ -846,7 +846,7 @@ func (p *Parlia) Seal(chain consensus.ChainHeaderReader, block *types.Block, res
 
 	// Wait until sealing is terminated or delay timeout.
 	log.Trace("Waiting for slot to sign and propagate", "delay", common.PrettyDuration(delay))
-	gopool.Submit(func() {
+	go func() {
 		select {
 		case <-stop:
 			return
@@ -858,7 +858,7 @@ func (p *Parlia) Seal(chain consensus.ChainHeaderReader, block *types.Block, res
 		default:
 			log.Warn("Sealing result is not read by miner", "sealhash", SealHash(header, p.chainConfig.ChainID))
 		}
-	})
+	}()
 
 	return nil
 }

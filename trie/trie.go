@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/common/gopool"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -532,10 +530,10 @@ func (t *Trie) Commit(onleaf LeafCallback) (root common.Hash, err error) {
 		h.onleaf = onleaf
 		h.leafCh = make(chan *leaf, leafChanSize)
 		wg.Add(1)
-		gopool.Submit(func() {
+		go func() {
 			defer wg.Done()
 			h.commitLoop(t.db)
-		})
+		}()
 	}
 	var newRoot hashNode
 	newRoot, err = h.Commit(t.root, t.db)

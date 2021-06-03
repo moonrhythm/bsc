@@ -253,17 +253,17 @@ func generateTrieRoot(db ethdb.KeyValueWriter, it Iterator, account common.Hash,
 	)
 	// Spin up a go-routine for trie hash re-generation
 	wg.Add(1)
-	gopool.Submit(func() {
+	go func() {
 		defer wg.Done()
 		generatorFn(db, in, out)
-	})
+	}()
 	// Spin up a go-routine for progress logging
 	if report && stats != nil {
 		wg.Add(1)
-		gopool.Submit(func() {
+		go func() {
 			defer wg.Done()
 			runReport(stats, stoplog)
-		})
+		}()
 	}
 	// Create a semaphore to assign tasks and collect results through. We'll pre-
 	// fill it with nils, thus using the same channel for both limiting concurrent

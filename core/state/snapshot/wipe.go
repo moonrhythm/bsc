@@ -20,8 +20,6 @@ import (
 	"bytes"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common/gopool"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -40,13 +38,13 @@ func wipeSnapshot(db ethdb.KeyValueStore, full bool) chan struct{} {
 	}
 	// Wipe everything else asynchronously
 	wiper := make(chan struct{}, 1)
-	gopool.Submit(func() {
+	go func() {
 		if err := wipeContent(db); err != nil {
 			log.Error("Failed to wipe state snapshot", "err", err) // Database close will trigger this
 			return
 		}
 		close(wiper)
-	})
+	}()
 	return wiper
 }
 

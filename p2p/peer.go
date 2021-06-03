@@ -230,12 +230,8 @@ func (p *Peer) run() (remoteRequested bool, err error) {
 		reason     DiscReason // sent to the peer
 	)
 	p.wg.Add(2)
-	gopool.Submit(func() {
-		p.readLoop(readErr)
-	})
-	gopool.Submit(func() {
-		p.pingLoop()
-	})
+	go p.readLoop(readErr)
+	go p.pingLoop()
 
 	// Start all protocol handlers.
 	writeStart <- struct{}{}
@@ -396,7 +392,7 @@ func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error)
 			rw = newMsgEventer(rw, p.events, p.ID(), proto.Name, p.Info().Network.RemoteAddress, p.Info().Network.LocalAddress)
 		}
 		p.log.Trace(fmt.Sprintf("Starting protocol %s/%d", proto.Name, proto.Version))
-		gopool.Submit(func() {
+		go func() {
 			defer p.wg.Done()
 			err := proto.Run(p, rw)
 			if err == nil {
@@ -406,7 +402,7 @@ func (p *Peer) startProtocols(writeStart <-chan struct{}, writeErr chan<- error)
 				p.log.Trace(fmt.Sprintf("Protocol %s/%d failed", proto.Name, proto.Version), "err", err)
 			}
 			p.protoErr <- err
-		})
+		}()
 	}
 }
 

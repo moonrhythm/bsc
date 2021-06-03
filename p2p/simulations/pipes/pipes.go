@@ -18,8 +18,6 @@ package pipes
 
 import (
 	"net"
-
-	"github.com/ethereum/go-ethereum/common/gopool"
 )
 
 // NetPipe wraps net.Pipe in a signature returning an error
@@ -38,11 +36,11 @@ func TCPPipe() (net.Conn, net.Conn, error) {
 
 	var aconn net.Conn
 	aerr := make(chan error, 1)
-	gopool.Submit(func() {
+	go func() {
 		var err error
 		aconn, err = l.Accept()
 		aerr <- err
-	})
+	}()
 
 	dconn, err := net.Dial("tcp", l.Addr().String())
 	if err != nil {
