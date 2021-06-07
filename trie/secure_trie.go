@@ -173,6 +173,17 @@ func (t *SecureTrie) Copy() *SecureTrie {
 	return &cpy
 }
 
+func (t *SecureTrie) ResetCopy() *SecureTrie {
+	cpy := *t
+	cpy.secKeyCacheOwner = nil
+	cpy.secKeyCache = nil
+	return &cpy
+}
+
+func (t *SecureTrie) GetRawTrie() Trie {
+	return t.trie
+}
+
 // NodeIterator returns an iterator that returns nodes of the underlying trie. Iteration
 // starts at the key after the given start key.
 func (t *SecureTrie) NodeIterator(start []byte) NodeIterator {

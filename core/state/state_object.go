@@ -321,7 +321,7 @@ func (s *stateObject) finalise(prefetch bool) {
 		}
 	}
 	if s.db.prefetcher != nil && prefetch && len(slotsToPrefetch) > 0 && s.data.Root != emptyRoot {
-		s.db.prefetcher.prefetch(s.data.Root, slotsToPrefetch)
+		s.db.prefetcher.prefetch(s.data.Root, slotsToPrefetch, s.addrHash)
 	}
 	if len(s.dirtyStorage) > 0 {
 		s.dirtyStorage = make(Storage)
@@ -412,6 +412,9 @@ func (s *stateObject) updateRoot(db Database) {
 func (s *stateObject) CommitTrie(db Database) error {
 	// If nothing changed, don't bother with hashing anything
 	if s.updateTrie(db) == nil {
+		if s.trie != nil && s.data.Root != emptyRoot {
+			db.CacheStorage(s.addrHash, s.data.Root, s.trie)
+		}
 		return nil
 	}
 	if s.dbErr != nil {
@@ -424,6 +427,9 @@ func (s *stateObject) CommitTrie(db Database) error {
 	root, err := s.trie.Commit(nil)
 	if err == nil {
 		s.data.Root = root
+	}
+	if s.data.Root != emptyRoot {
+		db.CacheStorage(s.addrHash, s.data.Root, s.trie)
 	}
 	return err
 }

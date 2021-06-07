@@ -141,7 +141,7 @@ func (p *triePrefetcher) copy() *triePrefetcher {
 }
 
 // prefetch schedules a batch of trie items to prefetch.
-func (p *triePrefetcher) prefetch(root common.Hash, keys [][]byte) {
+func (p *triePrefetcher) prefetch(root common.Hash, keys [][]byte, accountHash common.Hash) {
 	// If the prefetcher is an inactive one, bail out
 	if p.fetches != nil {
 		return
@@ -149,7 +149,7 @@ func (p *triePrefetcher) prefetch(root common.Hash, keys [][]byte) {
 	// Active fetcher, schedule the retrievals
 	fetcher := p.fetchers[root]
 	if fetcher == nil {
-		fetcher = newSubfetcher(p.db, root)
+		fetcher = newSubfetcher(p.db, root, accountHash)
 		p.fetchers[root] = fetcher
 	}
 	fetcher.schedule(keys)
@@ -213,19 +213,22 @@ type subfetcher struct {
 	seen map[string]struct{} // Tracks the entries already loaded
 	dups int                 // Number of duplicate preload tasks
 	used [][]byte            // Tracks the entries used in the end
+
+	accountHash common.Hash
 }
 
 // newSubfetcher creates a goroutine to prefetch state items belonging to a
 // particular root hash.
-func newSubfetcher(db Database, root common.Hash) *subfetcher {
+func newSubfetcher(db Database, root common.Hash, accountHash common.Hash) *subfetcher {
 	sf := &subfetcher{
-		db:   db,
-		root: root,
-		wake: make(chan struct{}, 1),
-		stop: make(chan struct{}),
-		term: make(chan struct{}),
-		copy: make(chan chan Trie),
-		seen: make(map[string]struct{}),
+		db:          db,
+		root:        root,
+		wake:        make(chan struct{}, 1),
+		stop:        make(chan struct{}),
+		term:        make(chan struct{}),
+		copy:        make(chan chan Trie),
+		seen:        make(map[string]struct{}),
+		accountHash: accountHash,
 	}
 	gopool.Submit(func() {
 		sf.loop()
@@ -283,7 +286,14 @@ func (sf *subfetcher) loop() {
 	defer close(sf.term)
 
 	// Start by opening the trie and stop processing if it fails
-	trie, err := sf.db.OpenTrie(sf.root)
+	var trie Trie
+	var err error
+	if sf.accountHash == emptyAddr {
+		trie, err = sf.db.OpenTrie(sf.root)
+	} else {
+		// address is useless
+		trie, err = sf.db.OpenStorageTrie(sf.accountHash, sf.root)
+	}
 	if err != nil {
 		log.Warn("Trie prefetcher failed opening trie", "root", sf.root, "err", err)
 		return

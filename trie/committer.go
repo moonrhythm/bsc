@@ -93,6 +93,7 @@ func (c *committer) commit(n node, db *Database) (node, error) {
 	switch cn := n.(type) {
 	case *shortNode:
 		// Commit child
+		cn.flags.dirty = false
 		collapsed := cn.copy()
 
 		// If the child is fullnode, recursively commit.
@@ -112,6 +113,7 @@ func (c *committer) commit(n node, db *Database) (node, error) {
 		}
 		return collapsed, nil
 	case *fullNode:
+		cn.flags.dirty = false
 		hashedKids, err := c.commitChildren(cn, db)
 		if err != nil {
 			return nil, err

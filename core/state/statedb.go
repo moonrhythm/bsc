@@ -45,6 +45,8 @@ type revision struct {
 var (
 	// emptyRoot is the known root hash of an empty trie.
 	emptyRoot = common.HexToHash("56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421")
+
+	emptyAddr = crypto.Keccak256Hash(common.Address{}.Bytes())
 )
 
 type proofList [][]byte
@@ -878,7 +880,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		addressesToPrefetch = append(addressesToPrefetch, common.CopyBytes(addr[:])) // Copy needed for closure
 	}
 	if s.prefetcher != nil && len(addressesToPrefetch) > 0 {
-		s.prefetcher.prefetch(s.originalRoot, addressesToPrefetch)
+		s.prefetcher.prefetch(s.originalRoot, addressesToPrefetch, emptyAddr)
 	}
 	// Invalidate journal because reverting across transactions is not allowed.
 	s.clearJournalAndRefund()
@@ -986,7 +988,8 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if metrics.EnabledExpensive {
 		defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 	}
-	return s.trie.Hash()
+	root := s.trie.Hash()
+	return root
 }
 
 // Prepare sets the current transaction hash and index and block hash which is
@@ -1077,7 +1080,7 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 			// The onleaf func is called _serially_, so we can reuse the same account
 			// for unmarshalling every time.
 			var account Account
-			_, err := s.trie.Commit(func(_ [][]byte, _ []byte, leaf []byte, parent common.Hash) error {
+			root, err := s.trie.Commit(func(_ [][]byte, _ []byte, leaf []byte, parent common.Hash) error {
 				if err := rlp.DecodeBytes(leaf, &account); err != nil {
 					return nil
 				}
@@ -1091,6 +1094,9 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 			}
 			if metrics.EnabledExpensive {
 				s.AccountCommits += time.Since(start)
+			}
+			if root != emptyRoot {
+				s.db.CacheAccount(root, s.trie)
 			}
 			return nil
 		},
