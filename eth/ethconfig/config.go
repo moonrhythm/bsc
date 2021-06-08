@@ -18,14 +18,15 @@
 package ethconfig
 
 import (
-	"github.com/ethereum/go-ethereum/consensus/parlia"
-	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"math/big"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/ethereum/go-ethereum/consensus/parlia"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -131,7 +132,6 @@ type Config struct {
 	SnapDiscoveryURLs []string
 
 	NoPruning       bool // Whether to disable pruning and flush everything to disk
-	NoPrefetch      bool // Whether to disable prefetching and only load state on demand
 	DirectBroadcast bool
 	RangeLimit      bool
 

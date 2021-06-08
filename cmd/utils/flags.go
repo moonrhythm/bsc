@@ -416,10 +416,6 @@ var (
 		Usage: "Percentage of cache memory allowance to use for snapshot caching (default = 10% full mode, 20% archive mode)",
 		Value: 10,
 	}
-	CacheNoPrefetchFlag = cli.BoolFlag{
-		Name:  "cache.noprefetch",
-		Usage: "Disable heuristic state prefetch during block import (less CPU and disk IO, more time waiting for data)",
-	}
 	CachePreimagesFlag = cli.BoolFlag{
 		Name:  "cache.preimages",
 		Usage: "Enable recording the SHA3/keccak preimages of trie keys",
@@ -1576,9 +1572,6 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if ctx.GlobalIsSet(RangeLimitFlag.Name) {
 		cfg.RangeLimit = ctx.GlobalBool(RangeLimitFlag.Name)
 	}
-	if ctx.GlobalIsSet(CacheNoPrefetchFlag.Name) {
-		cfg.NoPrefetch = ctx.GlobalBool(CacheNoPrefetchFlag.Name)
-	}
 	// Read the value from the flag no matter if it's set or not.
 	cfg.Preimages = ctx.GlobalBool(CachePreimagesFlag.Name)
 	if cfg.NoPruning && !cfg.Preimages {
@@ -1905,13 +1898,12 @@ func MakeChain(ctx *cli.Context, stack *node.Node) (chain *core.BlockChain, chai
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}
 	cache := &core.CacheConfig{
-		TrieCleanLimit:      ethconfig.Defaults.TrieCleanCache,
-		TrieCleanNoPrefetch: ctx.GlobalBool(CacheNoPrefetchFlag.Name),
-		TrieDirtyLimit:      ethconfig.Defaults.TrieDirtyCache,
-		TrieDirtyDisabled:   ctx.GlobalString(GCModeFlag.Name) == "archive",
-		TrieTimeLimit:       ethconfig.Defaults.TrieTimeout,
-		SnapshotLimit:       ethconfig.Defaults.SnapshotCache,
-		Preimages:           ctx.GlobalBool(CachePreimagesFlag.Name),
+		TrieCleanLimit:    ethconfig.Defaults.TrieCleanCache,
+		TrieDirtyLimit:    ethconfig.Defaults.TrieDirtyCache,
+		TrieDirtyDisabled: ctx.GlobalString(GCModeFlag.Name) == "archive",
+		TrieTimeLimit:     ethconfig.Defaults.TrieTimeout,
+		SnapshotLimit:     ethconfig.Defaults.SnapshotCache,
+		Preimages:         ctx.GlobalBool(CachePreimagesFlag.Name),
 	}
 	if cache.TrieDirtyDisabled && !cache.Preimages {
 		cache.Preimages = true
