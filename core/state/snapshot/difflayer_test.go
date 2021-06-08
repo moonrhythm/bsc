@@ -246,7 +246,7 @@ func emptyLayer() *diskLayer {
 //
 // BenchmarkSearch-6   	  500000	      3723 ns/op (10k per layer, only top-level RLock()
 func BenchmarkSearch(b *testing.B) {
-	// First, we set up 128 diff layers, with 1K items each
+	// First, we set up 16 diff layers, with 1K items each
 	fill := func(parent snapshot) *diffLayer {
 		var (
 			destructs = make(map[common.Hash]struct{})
@@ -260,7 +260,7 @@ func BenchmarkSearch(b *testing.B) {
 	}
 	var layer snapshot
 	layer = emptyLayer()
-	for i := 0; i < 128; i++ {
+	for i := 0; i < 16; i++ {
 		layer = fill(layer)
 	}
 	key := crypto.Keccak256Hash([]byte{0x13, 0x38})

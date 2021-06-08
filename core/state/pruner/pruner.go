@@ -246,21 +246,21 @@ func (p *Pruner) Prune(root common.Hash) error {
 	if stateBloomRoot != (common.Hash{}) {
 		return RecoverPruning(p.datadir, p.db, p.trieCachePath)
 	}
-	// If the target state root is not specified, use the HEAD-127 as the
+	// If the target state root is not specified, use the HEAD-15 as the
 	// target. The reason for picking it is:
 	// - in most of the normal cases, the related state is available
 	// - the probability of this layer being reorg is very low
 	var layers []snapshot.Snapshot
 	if root == (common.Hash{}) {
 		// Retrieve all snapshot layers from the current HEAD.
-		// In theory there are 128 difflayers + 1 disk layer present,
-		// so 128 diff layers are expected to be returned.
-		layers = p.snaptree.Snapshots(p.headHeader.Root, 128, true)
-		if len(layers) != 128 {
-			// Reject if the accumulated diff layers are less than 128. It
+		// In theory there are 16 difflayers + 1 disk layer present,
+		// so 16 diff layers are expected to be returned.
+		layers = p.snaptree.Snapshots(p.headHeader.Root, 16, true)
+		if len(layers) != 16 {
+			// Reject if the accumulated diff layers are less than 16. It
 			// means in most of normal cases, there is no associated state
 			// with bottom-most diff layer.
-			return fmt.Errorf("snapshot not old enough yet: need %d more blocks", 128-len(layers))
+			return fmt.Errorf("snapshot not old enough yet: need %d more blocks", 16-len(layers))
 		}
 		// Use the bottom-most diff layer as the target
 		root = layers[len(layers)-1].Root()
@@ -272,8 +272,8 @@ func (p *Pruner) Prune(root common.Hash) error {
 		// The special case is for clique based networks(rinkeby, goerli
 		// and some other private networks), it's possible that two
 		// consecutive blocks will have same root. In this case snapshot
-		// difflayer won't be created. So HEAD-127 may not paired with
-		// head-127 layer. Instead the paired layer is higher than the
+		// difflayer won't be created. So HEAD-15 may not paired with
+		// head-15 layer. Instead the paired layer is higher than the
 		// bottom-most diff layer. Try to find the bottom-most snapshot
 		// layer with state available.
 		//
@@ -392,7 +392,7 @@ func RecoverPruning(datadir string, db ethdb.Database, trieCachePath string) err
 	// otherwise the dangling state will be left.
 	var (
 		found       bool
-		layers      = snaptree.Snapshots(headBlock.Root(), 128, true)
+		layers      = snaptree.Snapshots(headBlock.Root(), 16, true)
 		middleRoots = make(map[common.Hash]struct{})
 	)
 	for _, layer := range layers {
