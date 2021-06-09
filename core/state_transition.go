@@ -297,6 +297,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 			fmt.Println("afterCall call")
 			fmt.Println(afterCall)
+			fmt.Println("vmerr")
+			fmt.Println(vmerr)
 		}
 	} else {
 		st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.gasPrice))
