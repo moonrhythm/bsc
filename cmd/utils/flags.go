@@ -389,7 +389,7 @@ var (
 	CacheDatabaseFlag = cli.IntFlag{
 		Name:  "cache.database",
 		Usage: "Percentage of cache memory allowance to use for database io",
-		Value: 50,
+		Value: 40,
 	}
 	CacheTrieFlag = cli.IntFlag{
 		Name:  "cache.trie",
@@ -413,8 +413,8 @@ var (
 	}
 	CacheSnapshotFlag = cli.IntFlag{
 		Name:  "cache.snapshot",
-		Usage: "Percentage of cache memory allowance to use for snapshot caching (default = 10% full mode, 20% archive mode)",
-		Value: 10,
+		Usage: "Percentage of cache memory allowance to use for snapshot caching (default = 20%)",
+		Value: 20,
 	}
 	CachePreimagesFlag = cli.BoolFlag{
 		Name:  "cache.preimages",
