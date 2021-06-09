@@ -163,7 +163,12 @@ func newStateDB(root common.Hash, db Database, snaps *snapshot.Tree, lazy bool) 
 		if err != nil {
 			return nil, err
 		}
+		fmt.Println("do open trie tree")
+		fmt.Println(sdb.trie == nil)
 		sdb.trie = tr
+	} else {
+		fmt.Println("sdb.snap")
+		fmt.Println(sdb.snap == nil)
 	}
 	return sdb, nil
 }
@@ -603,6 +608,10 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 	}
 	// If snapshot unavailable or reading from it failed, load from the database
 	if s.snap == nil || err != nil {
+		fmt.Println("snap is nil")
+		fmt.Println(s.snap == nil)
+		fmt.Println(err)
+
 		if metrics.EnabledExpensive {
 			defer func(start time.Time) { s.AccountReads += time.Since(start) }(time.Now())
 		}
