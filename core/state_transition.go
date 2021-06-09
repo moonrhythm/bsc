@@ -267,6 +267,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret   []byte
 		vmerr error // vm errors do not effect consensus and are therefore not assigned to err
 	)
+	beforeCall := st.gas // 317515
 	if contractCreation {
 		ret, _, st.gas, vmerr = st.evm.Create(sender, st.data, st.gas, st.value)
 	} else {
@@ -274,11 +275,29 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
 		ret, st.gas, vmerr = st.evm.Call(sender, st.to(), st.data, st.gas, st.value)
 	}
+	afterCall := st.gas // 196059
+
+	beforeRefund := st.gasUsed() // 339159 - 143100 = 196059
 	st.refundGas()
 
 	// consensus engine is parlia
 	if st.evm.ChainConfig().Parlia != nil {
 		st.state.AddBalance(consensus.SystemAddress, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.gasPrice))
+		b := st.state.GetBalance(consensus.SystemAddress)
+		fmt.Printf("balance %s\n", b.String())
+		if b.String() == "82730100311441848" {
+			fmt.Println(st.gasUsed())
+			fmt.Println(st.gasPrice.String())
+			fmt.Println("beforeRefund")
+			fmt.Println(beforeRefund)
+			fmt.Println("initial gas")
+			fmt.Println(st.initialGas)
+			fmt.Println("before call")
+			fmt.Println(beforeCall)
+
+			fmt.Println("afterCall call")
+			fmt.Println(afterCall)
+		}
 	} else {
 		st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.gasPrice))
 	}
