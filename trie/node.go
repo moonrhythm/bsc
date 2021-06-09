@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -64,8 +65,33 @@ func (n *fullNode) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, nodes)
 }
 
-func (n *fullNode) copy() *fullNode   { copy := *n; return &copy }
-func (n *shortNode) copy() *shortNode { copy := *n; return &copy }
+var fullNodePool = sync.Pool{
+	New: func() interface{} {
+		return &fullNode{}
+	},
+}
+
+var shortNodePool = sync.Pool{
+	New: func() interface{} {
+		return &shortNode{}
+	},
+}
+
+func (n *fullNode) copy() *fullNode   {
+	copy := fullNodePool.Get().(*fullNode)
+	copy.Children = n.Children
+	copy.flags = n.flags
+	fullNodePool.Put(copy)
+	return copy
+}
+func (n *shortNode) copy() *shortNode {
+	copy := shortNodePool.Get().(*shortNode)
+	copy.Key = n.Key
+	copy.Val = n.Val
+	copy.flags = n.flags
+	shortNodePool.Put(copy)
+	return copy
+}
 
 // nodeFlag contains caching-related metadata about a node.
 type nodeFlag struct {
