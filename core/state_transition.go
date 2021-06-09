@@ -17,6 +17,7 @@
 package core
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
@@ -299,6 +300,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			fmt.Println(afterCall)
 			fmt.Println("vmerr")
 			fmt.Println(vmerr)
+			fmt.Println("result")
+			fmt.Println(hex.EncodeToString(ret))
 		}
 	} else {
 		st.state.AddBalance(st.evm.Context.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.gasPrice))

@@ -125,6 +125,8 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("trie root open")
+	fmt.Println(root.String())
 	sdb := &StateDB{
 		db:                  db,
 		trie:                tr,
@@ -141,9 +143,12 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 	}
 	if sdb.snaps != nil {
 		if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap != nil {
+			fmt.Println("load snapshot")
 			sdb.snapDestructs = make(map[common.Hash]struct{})
 			sdb.snapAccounts = make(map[common.Hash][]byte)
 			sdb.snapStorage = make(map[common.Hash]map[common.Hash][]byte)
+		} else {
+			fmt.Println("failed to load snapshot")
 		}
 	}
 	return sdb, nil
