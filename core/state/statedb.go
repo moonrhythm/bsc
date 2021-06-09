@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/ethdb"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -163,12 +165,7 @@ func newStateDB(root common.Hash, db Database, snaps *snapshot.Tree, lazy bool) 
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println("do open trie tree")
-		fmt.Println(sdb.trie == nil)
 		sdb.trie = tr
-	} else {
-		fmt.Println("sdb.snap")
-		fmt.Println(sdb.snap == nil)
 	}
 	return sdb, nil
 }
@@ -608,10 +605,14 @@ func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 	}
 	// If snapshot unavailable or reading from it failed, load from the database
 	if s.snap == nil || err != nil {
-		fmt.Println("snap is nil")
-		fmt.Println(s.snap == nil)
-		fmt.Println(err)
-
+		if s.trie == nil {
+			tr, err := s.db.OpenTrie(s.originalRoot)
+			if err != nil {
+				s.setError(fmt.Errorf("failed to open trie tree"))
+				return nil
+			}
+			s.trie = tr
+		}
 		if metrics.EnabledExpensive {
 			defer func(start time.Time) { s.AccountReads += time.Since(start) }(time.Now())
 		}
@@ -1029,19 +1030,24 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 	commitFuncs := []func() error{
 		func() error {
 			// Commit objects to the trie, measuring the elapsed time
-			codeWriter := s.db.TrieDB().DiskDB().NewBatch()
-			tasks := make(chan func())
+			tasks := make(chan func(batch ethdb.KeyValueWriter))
 			taskResults := make(chan error, len(s.stateObjectsDirty))
 			tasksNum := 0
 			finishCh := make(chan struct{})
 			defer close(finishCh)
 			for i := 0; i < runtime.NumCPU(); i++ {
 				go func() {
+					codeWriter := s.db.TrieDB().DiskDB().NewBatch()
 					for {
 						select {
 						case task := <-tasks:
-							task()
+							task(codeWriter)
 						case <-finishCh:
+							if codeWriter.ValueSize() > 0 {
+								if err := codeWriter.Write(); err != nil {
+									log.Crit("Failed to commit dirty codes", "error", err)
+								}
+							}
 							return
 						}
 					}
@@ -1051,7 +1057,7 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 			for addr := range s.stateObjectsDirty {
 				if obj := s.stateObjects[addr]; !obj.deleted {
 					// Write any contract code associated with the state object
-					tasks <- func() {
+					tasks <- func(codeWriter ethdb.KeyValueWriter) {
 						if obj.code != nil && obj.dirtyCode {
 							rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
 							obj.dirtyCode = false
@@ -1075,11 +1081,6 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 
 			if len(s.stateObjectsDirty) > 0 {
 				s.stateObjectsDirty = make(map[common.Address]struct{}, len(s.stateObjectsDirty)/2)
-			}
-			if codeWriter.ValueSize() > 0 {
-				if err := codeWriter.Write(); err != nil {
-					log.Crit("Failed to commit dirty codes", "error", err)
-				}
 			}
 			// Write the account trie changes, measuing the amount of wasted time
 			var start time.Time
