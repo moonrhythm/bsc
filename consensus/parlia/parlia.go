@@ -1107,6 +1107,8 @@ func (p *Parlia) applyTransaction(
 		actualTx := (*receivedTxs)[0]
 		if !bytes.Equal(p.signer.Hash(actualTx).Bytes(), expectedHash.Bytes()) {
 			return fmt.Errorf("expected tx hash %v, get %v", expectedHash.String(), actualTx.Hash().String())
+		} else {
+			return errors.New("debug error")
 		}
 		expectedTx = actualTx
 		// move to next
