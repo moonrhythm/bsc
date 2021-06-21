@@ -216,11 +216,17 @@ func (db *cachingDB) OpenStorageTrie(addrHash, root common.Hash) (Trie, error) {
 }
 
 func (db *cachingDB) CacheAccount(root common.Hash, t Trie) {
+	if db.accountTrieCache == nil {
+		return
+	}
 	tr := t.(*trie.SecureTrie)
 	db.accountTrieCache.Add(root, tr.ResetCopy())
 }
 
 func (db *cachingDB) CacheStorage(addrHash common.Hash, root common.Hash, t Trie) {
+	if db.storageTrieCache == nil {
+		return
+	}
 	tr := t.(*trie.SecureTrie)
 	if tries, exist := db.storageTrieCache.Get(addrHash); exist {
 		triesArray := tries.([3]*triePair)
