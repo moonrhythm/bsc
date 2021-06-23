@@ -23,7 +23,6 @@ import (
 	"io"
 	"math/big"
 	mrand "math/rand"
-	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -1856,35 +1855,35 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		statedb.StartPrefetcher("chain")
 		activeState = statedb
 
-		preloadWg := sync.WaitGroup{}
-		accounts := make(map[common.Address]bool, block.Transactions().Len())
-		accountsSlice := make([]common.Address, 0, len(accounts))
-		for _, tx := range block.Transactions() {
-			from, err := types.Sender(signer, tx)
-			if err != nil {
-				break
-			}
-			accounts[from] = true
-			if tx.To() != nil {
-				accounts[*tx.To()] = true
-			}
-			for account, _ := range accounts {
-				accountsSlice = append(accountsSlice, account)
-			}
-		}
-		for i := 0; i < runtime.NumCPU(); i++ {
-			start := i * len(accountsSlice) / runtime.NumCPU()
-			end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
-			if i+1 == runtime.NumCPU() {
-				end = len(accountsSlice)
-			}
-			preloadWg.Add(1)
-			go func() {
-				defer preloadWg.Done()
-				statedb.PreloadStateObject(accountsSlice[start:end])
-			}()
-		}
-		preloadWg.Wait()
+		//preloadWg := sync.WaitGroup{}
+		//accounts := make(map[common.Address]bool, block.Transactions().Len())
+		//accountsSlice := make([]common.Address, 0,  block.Transactions().Len())
+		//for _, tx := range block.Transactions() {
+		//	from, err := types.Sender(signer, tx)
+		//	if err != nil {
+		//		break
+		//	}
+		//	accounts[from] = true
+		//	if tx.To() != nil {
+		//		accounts[*tx.To()] = true
+		//	}
+		//	for account, _ := range accounts {
+		//		accountsSlice = append(accountsSlice, account)
+		//	}
+		//}
+		//for i := 0; i < runtime.NumCPU(); i++ {
+		//	start := i * len(accountsSlice) / runtime.NumCPU()
+		//	end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
+		//	if i+1 == runtime.NumCPU() {
+		//		end = len(accountsSlice)
+		//	}
+		//	preloadWg.Add(1)
+		//	go func() {
+		//		defer preloadWg.Done()
+		//		statedb.PreloadStateObject(accountsSlice[start:end])
+		//	}()
+		//}
+		//preloadWg.Wait()
 		// Process block using the parent state as reference point
 		substart := time.Now()
 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
