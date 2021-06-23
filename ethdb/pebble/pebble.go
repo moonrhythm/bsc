@@ -187,7 +187,7 @@ type batch struct {
 
 // Put inserts the given value into the batch for later committing.
 func (b *batch) Put(key, value []byte) error {
-	err := b.b.Set(key, value, nil)
+	err := b.b.Set(key, value, pebble.NoSync)
 	if err != nil {
 		// TODO: should we swallow this error?
 		panic(err)
@@ -198,7 +198,7 @@ func (b *batch) Put(key, value []byte) error {
 
 // Delete inserts the a key removal into the batch for later committing.
 func (b *batch) Delete(key []byte) error {
-	err := b.b.Delete(key, nil)
+	err := b.b.Delete(key, pebble.NoSync)
 	if err != nil {
 		// TODO: should we swallow this error?
 		panic(err)
@@ -214,7 +214,7 @@ func (b *batch) ValueSize() int {
 
 // Write flushes any accumulated data to disk.
 func (b *batch) Write() error {
-	return b.db.Apply(b.b, nil)
+	return b.db.Apply(b.b, pebble.NoSync)
 }
 
 // Reset resets the batch for reuse.
