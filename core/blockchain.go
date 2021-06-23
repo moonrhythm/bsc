@@ -1854,10 +1854,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		// Enable prefetching to pull in trie node paths while processing transactions
 		statedb.StartPrefetcher("chain")
 		activeState = statedb
-
+		//
 		//preloadWg := sync.WaitGroup{}
 		//accounts := make(map[common.Address]bool, block.Transactions().Len())
-		//accountsSlice := make([]common.Address, 0,  block.Transactions().Len())
+		//accountsSlice := make([]common.Address, 0, block.Transactions().Len())
 		//for _, tx := range block.Transactions() {
 		//	from, err := types.Sender(signer, tx)
 		//	if err != nil {
@@ -1884,7 +1884,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		//	}()
 		//}
 		//preloadWg.Wait()
-		// Process block using the parent state as reference point
+		//Process block using the parent state as reference point
 		substart := time.Now()
 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
 		if err != nil {
