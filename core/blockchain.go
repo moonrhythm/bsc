@@ -1857,7 +1857,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		activeState = statedb
 
 		preloadWg := sync.WaitGroup{}
-		accounts := make(map[common.Address]bool, len(block.Transactions()))
+		accounts := make(map[common.Address]bool, block.Transactions().Len())
 		accountsSlice := make([]common.Address, 0, len(accounts))
 		for _, tx := range block.Transactions() {
 			from, err := types.Sender(signer, tx)
