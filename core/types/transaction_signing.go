@@ -22,12 +22,16 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 )
 
 var ErrInvalidChainId = errors.New("invalid chain id for signer")
+
+var ecrecoverCache = fastcache.New(50 * 1024 * 1024)
 
 // sigCache is used to cache the derived sender and contains
 // the signer used to derive it.
@@ -423,6 +427,10 @@ func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (commo
 	copy(sig[64-len(s):64], s)
 	sig[64] = V
 	// recover the public key from the signature
+	sigKey := append(sighash[:], sig...)
+	if addrBytes, exist := ecrecoverCache.HasGet(sigKey, nil); exist {
+		return common.BytesToAddress(addrBytes), nil
+	}
 	pub, err := crypto.Ecrecover(sighash[:], sig)
 	if err != nil {
 		return common.Address{}, err
@@ -432,6 +440,7 @@ func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (commo
 	}
 	var addr common.Address
 	copy(addr[:], crypto.Keccak256(pub[1:])[12:])
+	ecrecoverCache.Set(sigKey, addr[:])
 	return addr, nil
 }
 
