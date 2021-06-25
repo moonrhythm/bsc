@@ -90,7 +90,7 @@ type (
 		account *common.Address
 	}
 	resetObjectChange struct {
-		prev         *stateObject
+		prev         *StateObject
 		prevdestruct bool
 	}
 	suicideChange struct {
@@ -150,7 +150,7 @@ func (ch createObjectChange) dirtied() *common.Address {
 }
 
 func (ch resetObjectChange) revert(s *StateDB) {
-	s.setStateObject(ch.prev)
+	s.SetStateObject(ch.prev)
 	if !ch.prevdestruct && s.snap != nil {
 		delete(s.snapDestructs, ch.prev.addrHash)
 	}

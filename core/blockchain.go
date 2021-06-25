@@ -23,6 +23,7 @@ import (
 	"io"
 	"math/big"
 	mrand "math/rand"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -88,6 +89,7 @@ const (
 	maxTimeFutureBlocks = 30
 	badBlockLimit       = 10
 	TriesInMemory       = 16
+	preLoadLimit        = 32
 
 	// BlockChainVersion ensures that an incompatible database forces a resync from scratch.
 	//
@@ -1854,36 +1856,45 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool) (int, er
 		// Enable prefetching to pull in trie node paths while processing transactions
 		statedb.StartPrefetcher("chain")
 		activeState = statedb
-		//
-		//preloadWg := sync.WaitGroup{}
-		//accounts := make(map[common.Address]bool, block.Transactions().Len())
-		//accountsSlice := make([]common.Address, 0, block.Transactions().Len())
-		//for _, tx := range block.Transactions() {
-		//	from, err := types.Sender(signer, tx)
-		//	if err != nil {
-		//		break
-		//	}
-		//	accounts[from] = true
-		//	if tx.To() != nil {
-		//		accounts[*tx.To()] = true
-		//	}
-		//	for account, _ := range accounts {
-		//		accountsSlice = append(accountsSlice, account)
-		//	}
-		//}
-		//for i := 0; i < runtime.NumCPU(); i++ {
-		//	start := i * len(accountsSlice) / runtime.NumCPU()
-		//	end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
-		//	if i+1 == runtime.NumCPU() {
-		//		end = len(accountsSlice)
-		//	}
-		//	preloadWg.Add(1)
-		//	go func() {
-		//		defer preloadWg.Done()
-		//		statedb.PreloadStateObject(accountsSlice[start:end])
-		//	}()
-		//}
-		//preloadWg.Wait()
+
+		accounts := make(map[common.Address]bool, block.Transactions().Len())
+		accountsSlice := make([]common.Address, 0, block.Transactions().Len())
+		for _, tx := range block.Transactions() {
+			from, err := types.Sender(signer, tx)
+			if err != nil {
+				break
+			}
+			accounts[from] = true
+			if tx.To() != nil {
+				accounts[*tx.To()] = true
+			}
+			for account, _ := range accounts {
+				accountsSlice = append(accountsSlice, account)
+			}
+		}
+		if len(accountsSlice) >= preLoadLimit {
+			objsChan := make(chan []*state.StateObject, runtime.NumCPU())
+			for i := 0; i < runtime.NumCPU(); i++ {
+				start := i * len(accountsSlice) / runtime.NumCPU()
+				end := (i + 1) * len(accountsSlice) / runtime.NumCPU()
+				if i+1 == runtime.NumCPU() {
+					end = len(accountsSlice)
+				}
+				go func(start, end int) {
+					objs := statedb.PreloadStateObject(accountsSlice[start:end])
+					objsChan <- objs
+				}(start, end)
+			}
+			for i := 0; i < runtime.NumCPU(); i++ {
+				objs := <-objsChan
+				if objs != nil {
+					for _, obj := range objs {
+						statedb.SetStateObject(obj)
+					}
+				}
+			}
+		}
+
 		//Process block using the parent state as reference point
 		substart := time.Now()
 		receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
