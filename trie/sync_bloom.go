@@ -90,20 +90,29 @@ func (b *SyncBloom) init(database ethdb.Iteratee) {
 	it := database.NewIterator(nil, nil)
 
 	var (
-		start = time.Now()
-		swap  = time.Now()
+		start  = time.Now()
+		swap   = time.Now()
+		commit = time.Now()
+		buf    = make([]uint64, 0, 1000000) // size ~ 61MiB
 	)
 	for it.Next() && atomic.LoadUint32(&b.closed) == 0 {
 		// If the database entry is a trie node, add it to the bloom
 		key := it.Key()
 		if len(key) == common.HashLength {
-			b.bloom.AddHash(binary.BigEndian.Uint64(key))
-			bloomLoadMeter.Mark(1)
+			buf = append(buf, binary.BigEndian.Uint64(key))
 		} else if ok, hash := rawdb.IsCodeKey(key); ok {
 			// If the database entry is a contract code, add it to the bloom
-			b.bloom.AddHash(binary.BigEndian.Uint64(hash))
-			bloomLoadMeter.Mark(1)
+			buf = append(buf, binary.BigEndian.Uint64(hash))
 		}
+
+		// commit if buffer full or enough time elapsed
+		if len(buf) == cap(buf) || time.Since(commit) > time.Second {
+			b.bloom.AddHashBatch(buf)
+			bloomLoadMeter.Mark(int64(len(buf)))
+			buf = buf[:0]
+			commit = time.Now()
+		}
+
 		// If enough time elapsed since the last iterator swap, restart
 		if time.Since(swap) > 8*time.Second {
 			key := common.CopyBytes(it.Key())

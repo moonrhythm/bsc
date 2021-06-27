@@ -81,3 +81,5 @@ require (
 	gopkg.in/urfave/cli.v1 v1.20.0
 	gotest.tools v2.2.0+incompatible // indirect
 )
+
+replace github.com/holiman/bloomfilter/v2 => github.com/moonrhythm/bloomfilter/v2 v2.0.4-0.20210627121959-67c028f8261f
