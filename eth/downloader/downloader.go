@@ -45,7 +45,7 @@ var (
 	MaxHeaderFetch  = 192 // Amount of block headers to be fetched per retrieval request
 	MaxSkeletonSize = 128 // Number of header fetches to need for a skeleton assembly
 	MaxReceiptFetch = 256 // Amount of transaction receipts to allow fetching per request
-	MaxStateFetch   = 384 // Amount of node state values to allow fetching per request
+	MaxStateFetch   = 768 // Amount of node state values to allow fetching per request
 
 	rttMinEstimate   = 2 * time.Second  // Minimum round-trip time to target for download requests
 	rttMaxEstimate   = 20 * time.Second // Maximum round-trip time to target for download requests
