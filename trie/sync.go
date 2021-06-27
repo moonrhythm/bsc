@@ -17,6 +17,7 @@
 package trie
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -310,19 +311,29 @@ func (s *Sync) Process(result SyncResult) error {
 // Commit flushes the data stored in the internal membatch out to persistent
 // storage, returning any occurred error.
 func (s *Sync) Commit(dbw ethdb.Batch) error {
+	var batchHash []uint64
+	if s.bloom != nil {
+		batchHash = make([]uint64, 0, len(s.membatch.nodes)+len(s.membatch.codes))
+	}
+
 	// Dump the membatch into a database dbw
 	for key, value := range s.membatch.nodes {
 		rawdb.WriteTrieNode(dbw, key, value)
 		if s.bloom != nil {
-			s.bloom.Add(key[:])
+			batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
 		}
 	}
 	for key, value := range s.membatch.codes {
 		rawdb.WriteCode(dbw, key, value)
 		if s.bloom != nil {
-			s.bloom.Add(key[:])
+			batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
 		}
 	}
+
+	if s.bloom != nil {
+		s.bloom.AddBatch(batchHash)
+	}
+
 	// Drop the membatch data and return
 	s.membatch = newSyncMemBatch()
 	return nil

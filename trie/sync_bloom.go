@@ -174,6 +174,14 @@ func (b *SyncBloom) Add(hash []byte) {
 	bloomAddMeter.Mark(1)
 }
 
+func (b *SyncBloom) AddBatch(hashes []uint64) {
+	if atomic.LoadUint32(&b.closed) == 1 {
+		return
+	}
+	b.bloom.AddHashBatch(hashes)
+	bloomAddMeter.Mark(int64(len(hashes)))
+}
+
 // Contains tests if the bloom filter contains the given hash:
 //   - false: the bloom definitely does not contain hash
 //   - true:  the bloom maybe contains hash
