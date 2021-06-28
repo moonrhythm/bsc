@@ -446,6 +446,10 @@ func (s *stateSync) commit(force bool) error {
 	b := s.d.stateDB.NewBatch()
 	commit := s.sched.Commit(b)
 	go func() {
+		defer func() {
+			recover()
+		}()
+
 		<-commit
 		s.writeBatch <- b
 	}()
