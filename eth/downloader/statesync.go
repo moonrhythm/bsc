@@ -70,7 +70,7 @@ func (d *Downloader) syncState(root common.Hash) *stateSync {
 		// out or been delivered
 		<-s.started
 	case <-d.quitCh:
-		s.err = errCancelStateFetch
+		s.setErr(errCancelStateFetch)
 		close(s.done)
 	}
 	return s
@@ -272,11 +272,14 @@ type stateSync struct {
 
 	started chan struct{} // Started is signalled once the sync loop starts
 
-	deliver    chan *stateReq // Delivery channel multiplexing peer responses
-	cancel     chan struct{}  // Channel to signal a termination request
-	cancelOnce sync.Once      // Ensures cancel only ever gets called once
-	done       chan struct{}  // Channel to signal termination completion
-	err        error          // Any error hit during sync (set before completion)
+	deliver    chan *stateReq   // Delivery channel multiplexing peer responses
+	cancel     chan struct{}    // Channel to signal a termination request
+	cancelOnce sync.Once        // Ensures cancel only ever gets called once
+	done       chan struct{}    // Channel to signal termination completion
+	writeBatch chan ethdb.Batch // Batch to async write to disk
+	writeDone  chan struct{}    // Channel to signal write completion
+	muErr      sync.Mutex
+	err        error // Any error hit during sync (set before completion)
 }
 
 // trieTask represents a single trie node download task, containing a set of
@@ -296,16 +299,18 @@ type codeTask struct {
 // yet start the sync. The user needs to call run to initiate.
 func newStateSync(d *Downloader, root common.Hash) *stateSync {
 	return &stateSync{
-		d:         d,
-		root:      root,
-		sched:     state.NewStateSync(root, d.stateDB, d.stateBloom, nil),
-		keccak:    sha3.NewLegacyKeccak256().(crypto.KeccakState),
-		trieTasks: make(map[common.Hash]*trieTask),
-		codeTasks: make(map[common.Hash]*codeTask),
-		deliver:   make(chan *stateReq),
-		cancel:    make(chan struct{}),
-		done:      make(chan struct{}),
-		started:   make(chan struct{}),
+		d:          d,
+		root:       root,
+		sched:      state.NewStateSync(root, d.stateDB, d.stateBloom, nil),
+		keccak:     sha3.NewLegacyKeccak256().(crypto.KeccakState),
+		trieTasks:  make(map[common.Hash]*trieTask),
+		codeTasks:  make(map[common.Hash]*codeTask),
+		deliver:    make(chan *stateReq),
+		cancel:     make(chan struct{}),
+		done:       make(chan struct{}),
+		writeBatch: make(chan ethdb.Batch, 100),
+		writeDone:  make(chan struct{}),
+		started:    make(chan struct{}),
 	}
 }
 
@@ -315,17 +320,38 @@ func newStateSync(d *Downloader, root common.Hash) *stateSync {
 func (s *stateSync) run() {
 	close(s.started)
 	if s.d.snapSync {
-		s.err = s.d.SnapSyncer.Sync(s.root, s.cancel)
+		err := s.d.SnapSyncer.Sync(s.root, s.cancel)
+		if err != nil {
+			s.setErr(err)
+		}
 	} else {
-		s.err = s.loop()
+		go s.writeLoop()
+		err := s.loop()
+		if err != nil {
+			s.setErr(err)
+		}
 	}
+	close(s.writeBatch)
 	close(s.done)
+}
+
+func (s *stateSync) setErr(err error) {
+	s.muErr.Lock()
+	defer s.muErr.Unlock()
+	s.err = err
+}
+
+func (s *stateSync) getErr() error {
+	s.muErr.Lock()
+	defer s.muErr.Unlock()
+	return s.err
 }
 
 // Wait blocks until the sync is done or canceled.
 func (s *stateSync) Wait() error {
 	<-s.done
-	return s.err
+	<-s.writeDone
+	return s.getErr()
 }
 
 // Cancel cancels the sync and waits until it has shut down.
@@ -417,13 +443,24 @@ func (s *stateSync) commit(force bool) error {
 	if err := s.sched.Commit(b); err != nil {
 		return err
 	}
-	if err := b.Write(); err != nil {
-		return fmt.Errorf("DB write error: %v", err)
+	if err := s.getErr(); err != nil {
+		return err // error from async operation
 	}
+	s.writeBatch <- b
 	s.updateStats(s.numUncommitted, 0, 0, time.Since(start))
 	s.numUncommitted = 0
 	s.bytesUncommitted = 0
 	return nil
+}
+
+func (s *stateSync) writeLoop() {
+	for b := range s.writeBatch {
+		err := b.Write()
+		if err != nil {
+			s.setErr(fmt.Errorf("DB write error: %v", err))
+		}
+	}
+	close(s.writeDone)
 }
 
 // assignTasks attempts to assign new tasks to all idle peers, either from the
