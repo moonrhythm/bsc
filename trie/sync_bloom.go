@@ -90,11 +90,29 @@ func (b *SyncBloom) init(database ethdb.Iteratee) {
 	it := database.NewIterator(nil, nil)
 
 	var (
-		start  = time.Now()
-		swap   = time.Now()
-		commit = time.Now()
-		buf    = make([]uint64, 0, 1000000) // size ~ 61MiB
+		start   = time.Now()
+		swap    = time.Now()
+		commit  = time.Now()
+		bufPool = sync.Pool{
+			New: func() interface{} {
+				return make([]uint64, 0, 100000) // size ~ 6MiB
+			},
+		}
+		chBuf = make(chan []uint64, 100)
+		done  = make(chan struct{})
 	)
+
+	go func() {
+		for buf := range chBuf {
+			b.bloom.AddHashBatch(buf)
+			bloomLoadMeter.Mark(int64(len(buf)))
+			buf = buf[:0]
+			bufPool.Put(buf)
+		}
+		close(done)
+	}()
+
+	buf := bufPool.Get().([]uint64)
 	for it.Next() && atomic.LoadUint32(&b.closed) == 0 {
 		// If the database entry is a trie node, add it to the bloom
 		key := it.Key()
@@ -107,9 +125,8 @@ func (b *SyncBloom) init(database ethdb.Iteratee) {
 
 		// commit if buffer full or enough time elapsed
 		if len(buf) == cap(buf) || time.Since(commit) > time.Second {
-			b.bloom.AddHashBatch(buf)
-			bloomLoadMeter.Mark(int64(len(buf)))
-			buf = buf[:0]
+			chBuf <- buf
+			buf = bufPool.Get().([]uint64)
 			commit = time.Now()
 		}
 
@@ -125,6 +142,9 @@ func (b *SyncBloom) init(database ethdb.Iteratee) {
 		}
 	}
 	it.Release()
+
+	close(chBuf)
+	<-done
 
 	// Mark the bloom filter inited and return
 	log.Info("Initialized state bloom", "items", b.bloom.N(), "errorrate", b.bloom.FalsePosititveProbability(), "elapsed", common.PrettyDuration(time.Since(start)))
