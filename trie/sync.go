@@ -123,28 +123,38 @@ func (batch *syncMemBatch) hasCode(hash common.Hash) bool {
 // unknown trie hashes to retrieve, accepts node data associated with said hashes
 // and reconstructs the trie step by step until all is done.
 type Sync struct {
-	database ethdb.KeyValueReader     // Persistent database to check for existing entries
-	membatch *syncMemBatch            // Memory buffer to avoid frequent database writes
-	nodeReqs map[common.Hash]*request // Pending requests pertaining to a trie node hash
-	codeReqs map[common.Hash]*request // Pending requests pertaining to a code hash
-	queue    *prque.Prque             // Priority queue with the pending requests
-	fetches  map[int]int              // Number of active fetches per trie node depth
-	bloom    *SyncBloom               // Bloom filter for fast state existence checks
+	database     ethdb.KeyValueReader     // Persistent database to check for existing entries
+	membatch     *syncMemBatch            // Memory buffer to avoid frequent database writes
+	membatchPrev *syncMemBatch            // Previous membatch to avoid read from disk while writing to database
+	nodeReqs     map[common.Hash]*request // Pending requests pertaining to a trie node hash
+	codeReqs     map[common.Hash]*request // Pending requests pertaining to a code hash
+	queue        *prque.Prque             // Priority queue with the pending requests
+	fetches      map[int]int              // Number of active fetches per trie node depth
+	bloom        *SyncBloom               // Bloom filter for fast state existence checks
 }
 
 // NewSync creates a new trie data download scheduler.
 func NewSync(root common.Hash, database ethdb.KeyValueReader, callback LeafCallback, bloom *SyncBloom) *Sync {
 	ts := &Sync{
-		database: database,
-		membatch: newSyncMemBatch(),
-		nodeReqs: make(map[common.Hash]*request),
-		codeReqs: make(map[common.Hash]*request),
-		queue:    prque.New(nil),
-		fetches:  make(map[int]int),
-		bloom:    bloom,
+		database:     database,
+		membatch:     newSyncMemBatch(),
+		membatchPrev: newSyncMemBatch(),
+		nodeReqs:     make(map[common.Hash]*request),
+		codeReqs:     make(map[common.Hash]*request),
+		queue:        prque.New(nil),
+		fetches:      make(map[int]int),
+		bloom:        bloom,
 	}
 	ts.AddSubTrie(root, nil, common.Hash{}, callback)
 	return ts
+}
+
+func (s *Sync) hasNode(hash common.Hash) bool {
+	return s.membatch.hasNode(hash) || s.membatchPrev.hasNode(hash)
+}
+
+func (s *Sync) hasCode(hash common.Hash) bool {
+	return s.membatch.hasCode(hash) || s.membatchPrev.hasCode(hash)
 }
 
 // AddSubTrie registers a new trie to the sync code, rooted at the designated parent.
@@ -153,7 +163,7 @@ func (s *Sync) AddSubTrie(root common.Hash, path []byte, parent common.Hash, cal
 	if root == emptyRoot {
 		return
 	}
-	if s.membatch.hasNode(root) {
+	if s.hasNode(root) {
 		return
 	}
 	if s.bloom == nil || s.bloom.Contains(root[:]) {
@@ -193,7 +203,7 @@ func (s *Sync) AddCodeEntry(hash common.Hash, path []byte, parent common.Hash) {
 	if hash == emptyState {
 		return
 	}
-	if s.membatch.hasCode(hash) {
+	if s.hasCode(hash) {
 		return
 	}
 	if s.bloom == nil || s.bloom.Contains(hash[:]) {
@@ -309,34 +319,41 @@ func (s *Sync) Process(result SyncResult) error {
 }
 
 // Commit flushes the data stored in the internal membatch out to persistent
-// storage, returning any occurred error.
-func (s *Sync) Commit(dbw ethdb.Batch) error {
-	var batchHash []uint64
-	if s.bloom != nil {
-		batchHash = make([]uint64, 0, len(s.membatch.nodes)+len(s.membatch.codes))
-	}
-
-	// Dump the membatch into a database dbw
-	for key, value := range s.membatch.nodes {
-		rawdb.WriteTrieNode(dbw, key, value)
-		if s.bloom != nil {
-			batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
-		}
-	}
-	for key, value := range s.membatch.codes {
-		rawdb.WriteCode(dbw, key, value)
-		if s.bloom != nil {
-			batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
-		}
-	}
-
-	if s.bloom != nil {
-		s.bloom.AddBatch(batchHash)
-	}
-
-	// Drop the membatch data and return
+// storage.
+func (s *Sync) Commit(dbw ethdb.Batch) <-chan struct{} {
+	membatch := s.membatch
+	s.membatchPrev = s.membatch
 	s.membatch = newSyncMemBatch()
-	return nil
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		var batchHash []uint64
+		if s.bloom != nil {
+			batchHash = make([]uint64, 0, len(membatch.nodes)+len(membatch.codes))
+		}
+
+		// Dump the membatch into a database dbw
+		for key, value := range membatch.nodes {
+			rawdb.WriteTrieNode(dbw, key, value)
+			if s.bloom != nil {
+				batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
+			}
+		}
+		for key, value := range membatch.codes {
+			rawdb.WriteCode(dbw, key, value)
+			if s.bloom != nil {
+				batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
+			}
+		}
+
+		if s.bloom != nil {
+			s.bloom.AddBatch(batchHash)
+		}
+	}()
+
+	return done
 }
 
 // Pending returns the number of state entries currently pending for download.
@@ -425,7 +442,7 @@ func (s *Sync) children(req *request, object node) ([]*request, error) {
 		if node, ok := (child.node).(hashNode); ok {
 			// Try to resolve the node from the local database
 			hash := common.BytesToHash(node)
-			if s.membatch.hasNode(hash) {
+			if s.hasNode(hash) {
 				continue
 			}
 			if s.bloom == nil || s.bloom.Contains(node) {

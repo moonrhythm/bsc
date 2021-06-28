@@ -435,18 +435,20 @@ func (s *stateSync) loop() (err error) {
 }
 
 func (s *stateSync) commit(force bool) error {
+	if err := s.getErr(); err != nil {
+		return err // error from async operation
+	}
+
 	if !force && s.bytesUncommitted < ethdb.IdealBatchSize {
 		return nil
 	}
 	start := time.Now()
 	b := s.d.stateDB.NewBatch()
-	if err := s.sched.Commit(b); err != nil {
-		return err
-	}
-	if err := s.getErr(); err != nil {
-		return err // error from async operation
-	}
-	s.writeBatch <- b
+	commit := s.sched.Commit(b)
+	go func() {
+		<-commit
+		s.writeBatch <- b
+	}()
 	s.updateStats(s.numUncommitted, 0, 0, time.Since(start))
 	s.numUncommitted = 0
 	s.bytesUncommitted = 0
