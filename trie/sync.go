@@ -427,7 +427,7 @@ func (s *Sync) children(req *request, object node) ([]*request, error) {
 	requests := make([]*request, 0, len(children))
 
 	// parallel resolver
-	maxWorker := int(math.Min(10, float64(len(children))))
+	maxWorker := int(math.Min(20, float64(len(children))))
 	// priority bloom to init first
 	if !s.bloom.Inited() {
 		maxWorker = 1
