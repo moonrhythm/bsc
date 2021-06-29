@@ -20,6 +20,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/prque"
@@ -420,8 +422,58 @@ func (s *Sync) children(req *request, object node) ([]*request, error) {
 	default:
 		panic(fmt.Sprintf("unknown node: %+v", node))
 	}
+
 	// Iterate over the children, and request all unknown ones
 	requests := make([]*request, 0, len(children))
+
+	// parallel resolver
+	maxWorker := int(math.Min(10, float64(len(children))))
+	resolveCh := make(chan child, maxWorker)
+	resolveWg := sync.WaitGroup{}
+	requestAppendCh := make(chan *request, maxWorker)
+	done := make(chan struct{})
+	for i := 0; i < maxWorker; i++ {
+		resolveWg.Add(1)
+		go func() {
+			defer resolveWg.Done()
+
+			for child := range resolveCh {
+				// If the child references another node, resolve or schedule
+				if node, ok := (child.node).(hashNode); ok {
+					// Try to resolve the node from the local database
+					hash := common.BytesToHash(node)
+					if s.hasNode(hash) {
+						continue
+					}
+					if s.bloom == nil || s.bloom.Contains(node) {
+						// Bloom filter says this might be a duplicate, double check.
+						// If database says yes, then at least the trie node is present
+						// and we hold the assumption that it's NOT legacy contract code.
+						if blob := rawdb.ReadTrieNode(s.database, hash); len(blob) > 0 {
+							continue
+						}
+						// False positive, bump fault meter
+						bloomFaultMeter.Mark(1)
+					}
+
+					// Locally unknown node, schedule for retrieval
+					requestAppendCh <- &request{
+						path:     child.path,
+						hash:     hash,
+						parents:  []*request{req},
+						callback: req.callback,
+					}
+				}
+			}
+		}()
+	}
+	go func() {
+		for req := range requestAppendCh {
+			requests = append(requests, req)
+		}
+		close(done)
+	}()
+
 	for _, child := range children {
 		// Notify any external watcher of a new key/value node
 		if req.callback != nil {
@@ -438,32 +490,13 @@ func (s *Sync) children(req *request, object node) ([]*request, error) {
 				}
 			}
 		}
-		// If the child references another node, resolve or schedule
-		if node, ok := (child.node).(hashNode); ok {
-			// Try to resolve the node from the local database
-			hash := common.BytesToHash(node)
-			if s.hasNode(hash) {
-				continue
-			}
-			if s.bloom == nil || s.bloom.Contains(node) {
-				// Bloom filter says this might be a duplicate, double check.
-				// If database says yes, then at least the trie node is present
-				// and we hold the assumption that it's NOT legacy contract code.
-				if blob := rawdb.ReadTrieNode(s.database, hash); len(blob) > 0 {
-					continue
-				}
-				// False positive, bump fault meter
-				bloomFaultMeter.Mark(1)
-			}
-			// Locally unknown node, schedule for retrieval
-			requests = append(requests, &request{
-				path:     child.path,
-				hash:     hash,
-				parents:  []*request{req},
-				callback: req.callback,
-			})
-		}
+		resolveCh <- child
 	}
+	close(resolveCh)
+	resolveWg.Wait()
+	close(requestAppendCh)
+	<-done
+
 	return requests, nil
 }
 
