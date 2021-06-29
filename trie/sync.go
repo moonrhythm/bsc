@@ -322,40 +322,35 @@ func (s *Sync) Process(result SyncResult) error {
 
 // Commit flushes the data stored in the internal membatch out to persistent
 // storage.
-func (s *Sync) Commit(dbw ethdb.Batch) <-chan struct{} {
+func (s *Sync) Commit(dbw ethdb.Batch) error {
 	membatch := s.membatch
 	s.membatchPrev = s.membatch
 	s.membatch = newSyncMemBatch()
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	var batchHash []uint64
+	if s.bloom != nil {
+		batchHash = make([]uint64, 0, len(membatch.nodes)+len(membatch.codes))
+	}
 
-		var batchHash []uint64
+	// Dump the membatch into a database dbw
+	for key, value := range membatch.nodes {
+		rawdb.WriteTrieNode(dbw, key, value)
 		if s.bloom != nil {
-			batchHash = make([]uint64, 0, len(membatch.nodes)+len(membatch.codes))
+			batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
 		}
-
-		// Dump the membatch into a database dbw
-		for key, value := range membatch.nodes {
-			rawdb.WriteTrieNode(dbw, key, value)
-			if s.bloom != nil {
-				batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
-			}
-		}
-		for key, value := range membatch.codes {
-			rawdb.WriteCode(dbw, key, value)
-			if s.bloom != nil {
-				batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
-			}
-		}
-
+	}
+	for key, value := range membatch.codes {
+		rawdb.WriteCode(dbw, key, value)
 		if s.bloom != nil {
-			s.bloom.AddBatch(batchHash)
+			batchHash = append(batchHash, binary.BigEndian.Uint64(key[:]))
 		}
-	}()
+	}
 
-	return done
+	if s.bloom != nil {
+		s.bloom.AddBatch(batchHash)
+	}
+
+	return nil
 }
 
 // Pending returns the number of state entries currently pending for download.
