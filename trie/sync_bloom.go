@@ -222,3 +222,7 @@ func (b *SyncBloom) Contains(hash []byte) bool {
 	}
 	return maybe
 }
+
+func (b *SyncBloom) Inited() bool {
+	return atomic.LoadUint32(&b.inited) == 1
+}

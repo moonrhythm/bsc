@@ -428,6 +428,10 @@ func (s *Sync) children(req *request, object node) ([]*request, error) {
 
 	// parallel resolver
 	maxWorker := int(math.Min(10, float64(len(children))))
+	// priority bloom to init first
+	if !s.bloom.Inited() {
+		maxWorker = 1
+	}
 	resolveCh := make(chan child, maxWorker)
 	resolveWg := sync.WaitGroup{}
 	requestAppendCh := make(chan *request, maxWorker)
