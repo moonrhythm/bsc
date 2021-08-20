@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -777,11 +778,13 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 		return nil
 	}
 	var err error
+	nstart := time.Now()
 	node.forChilds(func(child common.Hash) {
 		if err == nil {
 			err = db.commit(child, batch, uncacher, callback)
 		}
 	})
+	log.Info("commit forChilds", "time", time.Since(nstart))
 	if err != nil {
 		return err
 	}
@@ -791,6 +794,7 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 		callback(hash)
 	}
 	if batch.ValueSize() >= ethdb.IdealBatchSize {
+		nstart := time.Now()
 		if err := batch.Write(); err != nil {
 			return err
 		}
@@ -798,6 +802,7 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 		batch.Replay(uncacher)
 		batch.Reset()
 		db.lock.Unlock()
+		log.Info("commit write batch", "time", time.Since(nstart))
 	}
 	return nil
 }
