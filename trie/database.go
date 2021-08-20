@@ -713,6 +713,7 @@ func (db *Database) Commit(node common.Hash, report bool, callback func(common.H
 
 	// Move all of the accumulated preimages into a write batch
 	if db.preimages != nil {
+		nstart := time.Now()
 		rawdb.WritePreimages(batch, db.preimages)
 		// Since we're going to replay trie node writes into the clean cache, flush out
 		// any batched pre-images before continuing.
@@ -720,20 +721,25 @@ func (db *Database) Commit(node common.Hash, report bool, callback func(common.H
 			return err
 		}
 		batch.Reset()
+		log.Info("Write Pre Images", "time", time.Since(nstart))
 	}
 	// Move the trie itself into the batch, flushing if enough data is accumulated
 	nodes, storage := len(db.dirties), db.dirtiesSize
 
 	uncacher := &cleaner{db}
+	nstart := time.Now()
 	if err := db.commit(node, batch, uncacher, callback); err != nil {
 		log.Error("Failed to commit trie from trie database", "err", err)
 		return err
 	}
+	log.Info("commit internal", "time", time.Since(nstart))
+	nstart = time.Now()
 	// Trie mostly committed to disk, flush any batch leftovers
 	if err := batch.Write(); err != nil {
 		log.Error("Failed to write trie to disk", "err", err)
 		return err
 	}
+	log.Info("write batch", "time", time.Since(nstart))
 	// Uncache any leftovers in the last batch
 	db.lock.Lock()
 	defer db.lock.Unlock()
