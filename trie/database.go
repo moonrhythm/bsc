@@ -773,23 +773,18 @@ func (db *Database) Commit(node common.Hash, report bool, callback func(common.H
 // commit is the private locked version of Commit.
 func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleaner, callback func(common.Hash)) error {
 	// If the node does not exist, it's a previously committed node
-	node, ok := db.dirties[hash]
+	_, ok := db.dirties[hash]
 	if !ok {
 		return nil
 	}
 
 	// fetch current node childs
 	var wgChilds sync.WaitGroup
-	childs := make(chan common.Hash, 10)
-	node.forChilds(func(child common.Hash) {
-		wgChilds.Add(1)
-		childs <- child
-	})
+	childs := make(chan common.Hash, 100)
+	childs <- hash
 
 	writeNodes := make(chan *cachedNode, 10)
 	writeNodesDone := make(chan struct{})
-
-	writeNodes <- node
 
 	// write trie node
 	var writeErr error
