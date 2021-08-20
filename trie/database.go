@@ -778,13 +778,11 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 		return nil
 	}
 	var err error
-	nstart := time.Now()
 	node.forChilds(func(child common.Hash) {
 		if err == nil {
 			err = db.commit(child, batch, uncacher, callback)
 		}
 	})
-	log.Info("commit forChilds", "time", time.Since(nstart))
 	if err != nil {
 		return err
 	}
