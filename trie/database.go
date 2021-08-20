@@ -781,7 +781,6 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 	// fetch current node childs
 	var wgChilds sync.WaitGroup
 	childs := make(chan common.Hash, 100)
-	childs <- hash
 
 	writeNodes := make(chan *cachedNode, 10)
 	writeNodesDone := make(chan struct{})
@@ -832,6 +831,9 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 			}
 		}()
 	}
+
+	wgChilds.Add(1)
+	childs <- hash
 
 	wgChilds.Wait()
 	close(writeNodes)
