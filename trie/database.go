@@ -777,32 +777,72 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 	if !ok {
 		return nil
 	}
-	var err error
+
+	// fetch current node childs
+	var wgChilds sync.WaitGroup
+	childs := make(chan common.Hash, 10)
 	node.forChilds(func(child common.Hash) {
-		if err == nil {
-			err = db.commit(child, batch, uncacher, callback)
-		}
+		wgChilds.Add(1)
+		childs <- child
 	})
-	if err != nil {
-		return err
-	}
-	// If we've reached an optimal batch size, commit and start over
-	rawdb.WriteTrieNode(batch, hash, node.rlp())
-	if callback != nil {
-		callback(hash)
-	}
-	if batch.ValueSize() >= ethdb.IdealBatchSize {
-		nstart := time.Now()
-		if err := batch.Write(); err != nil {
-			return err
+
+	writeNodes := make(chan *cachedNode, 10)
+	writeNodesDone := make(chan struct{})
+
+	writeNodes <- node
+
+	// write trie node
+	var writeErr error
+	go func() {
+		defer close(writeNodesDone)
+
+		for node := range writeNodes {
+			rawdb.WriteTrieNode(batch, hash, node.rlp())
+			if callback != nil {
+				callback(hash)
+			}
+			// If we've reached an optimal batch size, commit and start over
+			if batch.ValueSize() >= ethdb.IdealBatchSize {
+				if err := batch.Write(); err != nil {
+					writeErr = err
+					return
+				}
+				db.lock.Lock()
+				batch.Replay(uncacher)
+				batch.Reset()
+				db.lock.Unlock()
+			}
 		}
-		db.lock.Lock()
-		batch.Replay(uncacher)
-		batch.Reset()
-		db.lock.Unlock()
-		log.Info("commit write batch", "time", time.Since(nstart))
+	}()
+
+	processChild := func(hash common.Hash) {
+		defer wgChilds.Done()
+
+		node, ok := db.dirties[hash]
+		if !ok {
+			return
+		}
+		writeNodes <- node
+		node.forChilds(func(child common.Hash) {
+			wgChilds.Add(1)
+			childs <- child
+		})
 	}
-	return nil
+
+	// start child fetch workers
+	for i := 0; i < 20; i++ {
+		go func() {
+			for child := range childs {
+				processChild(child)
+			}
+		}()
+	}
+
+	wgChilds.Wait()
+	close(writeNodes)
+	<-writeNodesDone
+
+	return writeErr
 }
 
 // cleaner is a database batch replayer that takes a batch of write operations
