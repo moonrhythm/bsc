@@ -49,6 +49,3 @@ devtools:
 	env GOBIN= go install ./cmd/abigen
 	@type "solc" 2> /dev/null || echo 'Please install solc'
 	@type "protoc" 2> /dev/null || echo 'Please install protoc'
-
-docker:
-	docker build --pull -t bnb-chain/bsc:latest -f Dockerfile .
