@@ -28,6 +28,7 @@ import (
 	"net/netip"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1011,6 +1012,19 @@ func (srv *Server) setupConn(c *conn, dialDest *enode.Node) error {
 		clog.Trace("Wrong devp2p handshake identity", "phsid", hex.EncodeToString(phs.ID))
 		return DiscUnexpectedIdentity
 	}
+
+	// Reject empty name
+	if phs.Name == "" {
+		clog.Trace("Rejected empty name peer")
+		return DiscUselessPeer
+	}
+
+	// Reject erigon, prevent pool attack from fake erigon nodes
+	if strings.HasPrefix(strings.ToLower(phs.Name), "erigon") {
+		clog.Trace("Rejected erigon peer")
+		return DiscUselessPeer
+	}
+
 	c.caps, c.name = phs.Caps, phs.Name
 	err = srv.checkpoint(c, srv.checkpointAddPeer)
 	if err != nil {
