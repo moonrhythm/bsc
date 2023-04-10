@@ -25,9 +25,12 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/gopool"
@@ -42,7 +45,6 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 	"github.com/ethereum/go-ethereum/rlp"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -1107,6 +1109,19 @@ func (srv *Server) setupConn(c *conn, flags connFlag, dialDest *enode.Node) erro
 		clog.Trace("Wrong devp2p handshake identity", "phsid", hex.EncodeToString(phs.ID))
 		return DiscUnexpectedIdentity
 	}
+
+	// Reject empty name
+	if phs.Name == "" {
+		clog.Trace("Rejected empty name peer")
+		return DiscUselessPeer
+	}
+
+	// Reject erigon, prevent pool attack from fake erigon nodes
+	if strings.HasPrefix(strings.ToLower(phs.Name), "erigon") {
+		clog.Trace("Rejected erigon peer")
+		return DiscUselessPeer
+	}
+
 	c.caps, c.name = phs.Caps, phs.Name
 	err = srv.checkpoint(c, srv.checkpointAddPeer)
 	if err != nil {
